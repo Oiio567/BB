@@ -3403,6 +3403,47 @@
                         </div>
                         <textarea id="theater-custom-prompt" class="theater-textarea" placeholder="输入自定义剧情提示词..."></textarea>
                     </div>
+                    <!-- 独立API设置 -->
+                    <div class="theater-control-group">
+                        <div class="theater-context-toggle-row">
+                            <label>调用独立API</label>
+                            <div class="theater-toggle-switch" id="theater-api-toggle" role="switch" aria-checked="false" tabindex="0">
+                                <div class="theater-toggle-slider"></div>
+                            </div>
+                        </div>
+                        <div class="theater-api-config" id="theater-api-config" style="display:none;">
+                            <div class="theater-api-preset-row">
+                                <label>API预设</label>
+                                <select id="theater-api-preset-select" class="theater-select">
+                                    <option value="">— 选择预设配置 —</option>
+                                </select>
+                            </div>
+                            <div class="theater-api-field-row">
+                                <label>API地址</label>
+                                <input type="text" id="theater-api-url" class="theater-input" placeholder="https://api.example.com">
+                            </div>
+                            <div class="theater-api-field-row">
+                                <label>API密钥</label>
+                                <input type="password" id="theater-api-key" class="theater-input" placeholder="sk-...">
+                            </div>
+                            <div class="theater-api-field-row">
+                                <label>模型</label>
+                                <div style="display:flex;gap:8px;align-items:center;flex:1;">
+                                    <select id="theater-api-model" class="theater-select" style="flex:1;">
+                                        <option value="">请先拉取或选择预设</option>
+                                    </select>
+                                    <button type="button" id="theater-api-fetch-models-btn" class="theater-save-prompt-btn" style="padding:10px 14px;">拉取模型</button>
+                                </div>
+                            </div>
+                            <div class="theater-api-field-row">
+                                <button type="button" id="theater-api-save-btn" class="theater-save-prompt-btn" style="width:100%;text-align:center;">保存独立API设置</button>
+                            </div>
+                            <div class="theater-context-hint">
+                                开启后将使用独立API生成剧情，关闭则使用主API设置。选择预设可快速填充配置。
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="theater-control-group">
                         <label>分类名称</label>
                         <input type="text" id="theater-category-input" class="theater-input" placeholder="未分类" value="未分类">

@@ -354,13 +354,32 @@ function setupChatRoom() {
                 }
             }
             const transferCard = e.target.closest('.transfer-card.received-transfer');
-            if (transferCard && currentChatType === 'private') {
+            if (transferCard) {
                 const messageWrapper = transferCard.closest('.message-wrapper');
                 const messageId = messageWrapper.dataset.id;
-                const character = db.characters.find(c => c.id === currentChatId);
-                const message = character.history.find(m => m.id === messageId);
-                if (message && message.transferStatus === 'pending') {
-                    handleReceivedTransferClick(messageId);
+                
+                if (currentChatType === 'private') {
+                    const character = db.characters.find(c => c.id === currentChatId);
+                    const message = character.history.find(m => m.id === messageId);
+                    if (message && message.transferStatus === 'pending') {
+                        handleReceivedTransferClick(messageId);
+                    }
+                } else if (currentChatType === 'group') {
+                    const group = db.groups.find(g => g.id === currentChatId);
+                    const message = group.history.find(m => m.id === messageId);
+                    if (message && message.transferStatus === 'pending') {
+                        // 检查是否是发给用户的转账（角色向用户转账）
+                        const groupTransferRegex = /\[(.*?)\s*向\s*(.*?)\s*转账：([\d.,]+)元；备注：(.*?)\]/;
+                        const transferMatch = message.content.match(groupTransferRegex);
+                        if (transferMatch) {
+                            const to = transferMatch[2];
+                            const myName = group.me.nickname;
+                            // 只有发给用户的转账（角色向用户转账）可以点击接收
+                            if (to === myName && message.role === 'assistant') {
+                                handleReceivedTransferClick(messageId);
+                            }
+                        }
+                    }
                 }
             }
         }

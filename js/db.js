@@ -167,7 +167,8 @@ const globalSettingKeys = [
     'cotSettings', 'cotPresets', 'hasSeenVideoCallDisclaimer', 'hasSeenVideoCallAvatarHint',
     'favorites', 'piggyBank',
     'theaterScenarios', 'theaterPromptPresets',
-    'theaterHtmlScenarios', 'theaterHtmlPromptPresets', 'theaterMode'
+    'theaterHtmlScenarios', 'theaterHtmlPromptPresets', 'theaterMode',
+    'theaterApiSettings'
 ];
 if (typeof window !== 'undefined') window.globalSettingKeysForBackup = globalSettingKeys;
 
@@ -742,7 +743,8 @@ const loadData = async () => {
             theaterPromptPresets: [],
             theaterHtmlScenarios: [],
             theaterHtmlPromptPresets: [],
-            theaterMode: 'text'
+            theaterMode: 'text',
+            theaterApiSettings: { useTheaterApi: false, url: '', key: '', model: '' }
         };
         db[key] = settings[key] !== undefined ? settings[key] : (defaultValue[key] !== undefined ? JSON.parse(JSON.stringify(defaultValue[key])) : undefined);
     });
