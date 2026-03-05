@@ -266,6 +266,8 @@ function setupChatRoom() {
 
         if (e.target && e.target.id === 'load-more-btn') {
             loadMoreMessages();
+        } else if (e.target && e.target.id === 'load-newer-btn') {
+            loadNewerMessages();
         } else if (isInMultiSelectMode) {
             const messageWrapper = e.target.closest('.message-wrapper');
             if (messageWrapper) {
@@ -284,6 +286,15 @@ function setupChatRoom() {
                     const playKey = wrapper ? wrapper.dataset.id : null;
                     const svc = typeof MinimaxTTSService !== 'undefined' ? MinimaxTTSService : null;
                     const state = svc ? svc.getPlayState() : {};
+
+                    // 检查角色是否启用了 TTS
+                    if (svc && currentChatId && typeof db !== 'undefined' && db.characters) {
+                        const _chat = db.characters.find(c => c.id === currentChatId);
+                        if (!_chat || !_chat.ttsConfig || !_chat.ttsConfig.chatTtsEnabled) {
+                            showToast('该角色未启用 TTS 语音');
+                            return;
+                        }
+                    }
 
                     // 当前正在播的就是这条：切换暂停/恢复，避免重复读
                     if (svc && state.currentPlayKey === playKey && state.isPlaying) {
@@ -407,13 +418,13 @@ function setupChatRoom() {
 
     messageArea.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        if (e.target.id === 'load-more-btn' || isInMultiSelectMode) return;
+        if (e.target.id === 'load-more-btn' || e.target.id === 'load-newer-btn' || isInMultiSelectMode) return;
         const messageWrapper = e.target.closest('.message-wrapper');
         if (!messageWrapper) return;
         handleMessageLongPress(messageWrapper, e.clientX, e.clientY);
     });
     messageArea.addEventListener('touchstart', (e) => {
-        if (e.target.id === 'load-more-btn') return;
+        if (e.target.id === 'load-more-btn' || e.target.id === 'load-newer-btn') return;
         const messageWrapper = e.target.closest('.message-wrapper');
         if (!messageWrapper) return;
         longPressTimer = setTimeout(() => {
@@ -615,7 +626,7 @@ function openChatRoom(chatId, type) {
 async function sendMessage() {
     const text = messageInput.value.trim();
     if (!text || isGenerating) return;
-    messageInput.value = ''; 
+    messageInput.value = '';
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
 
     if (!chat) return;

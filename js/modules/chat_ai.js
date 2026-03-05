@@ -695,11 +695,13 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     });
 
                     if (originalMessage) {
+                        let filteredReplyText = replyText;
+                        if (typeof applyRegexFilter === 'function') filteredReplyText = applyRegexFilter(replyText, targetChatId);
                         const message = {
                             id: `msg_${Date.now()}_${Math.random()}`,
                             role: 'assistant',
-                            content: `[${character.realName}的消息：${replyText}]`,
-                            parts: [{ type: 'text', text: `[${character.realName}的消息：${replyText}]` }],
+                            content: `[${character.realName}的消息：${filteredReplyText}]`,
+                            parts: [{ type: 'text', text: `[${character.realName}的消息：${filteredReplyText}]` }],
                             timestamp: Date.now(),
                             isStatusUpdate: item.isStatusUpdate,
                             statusSnapshot: item.statusSnapshot,
@@ -712,11 +714,13 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         chat.history.push(message);
                         addMessageBubble(message, targetChatId, targetChatType);
                     } else {
+                        let filteredReplyText2 = replyText;
+                        if (typeof applyRegexFilter === 'function') filteredReplyText2 = applyRegexFilter(replyText, targetChatId);
                         const message = {
                             id: `msg_${Date.now()}_${Math.random()}`,
                             role: 'assistant',
-                            content: `[${character.realName}的消息：${replyText}]`,
-                            parts: [{ type: 'text', text: `[${character.realName}的消息：${replyText}]` }],
+                            content: `[${character.realName}的消息：${filteredReplyText2}]`,
+                            parts: [{ type: 'text', text: `[${character.realName}的消息：${filteredReplyText2}]` }],
                             timestamp: Date.now(),
                             isStatusUpdate: item.isStatusUpdate,
                             statusSnapshot: item.statusSnapshot
@@ -737,6 +741,11 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         const afterReveal = rawContent.slice(idx + '[REVEAL]'.length).trim();
                         const linkedChar = db.characters && db.characters.find(c => c.id === chat.linkedCharId);
                         revealToMain = afterReveal || (linkedChar ? '其实我就是' + (linkedChar.realName || linkedChar.remarkName) + '啦～' : '没想到吧，是我哦～');
+                    }
+
+                    // 应用正则过滤
+                    if (typeof applyRegexFilter === 'function') {
+                        finalContent = applyRegexFilter(finalContent, targetChatId);
                     }
 
                     const message = {

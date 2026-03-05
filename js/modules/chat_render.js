@@ -1,5 +1,18 @@
 // --- 消息渲染模块 ---
 
+// 根据时间戳格式设置生成时间字符串
+function formatTimestampByFormat(timestamp, chat) {
+    const d = new Date(timestamp);
+    const fmt = chat.timestampFormat || 'hm';
+    if (fmt === 'hms') {
+        return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    }
+    if (fmt === 'ymd') {
+        return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
+    }
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (!chat || !chat.history) return;
@@ -80,6 +93,8 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
     });
     const existingLoadBtn = document.getElementById('load-more-btn');
     if (existingLoadBtn) existingLoadBtn.remove();
+    const existingLoadNewerBtn = document.getElementById('load-newer-btn');
+    if (existingLoadNewerBtn) existingLoadNewerBtn.remove();
     messageArea.prepend(fragment);
     
     if (totalMessages > currentPage * pageSize) {
@@ -88,6 +103,14 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
         loadMoreButton.className = 'load-more-btn';
         loadMoreButton.textContent = '加载更早的消息';
         messageArea.prepend(loadMoreButton);
+    }
+    // 当不在最新页时，显示"加载更新的消息"按钮
+    if (currentPage > 1) {
+        const loadNewerButton = document.createElement('button');
+        loadNewerButton.id = 'load-newer-btn';
+        loadNewerButton.className = 'load-more-btn';
+        loadNewerButton.textContent = '加载更新的消息';
+        messageArea.appendChild(loadNewerButton);
     }
     if (forceScrollToBottom) {
         setTimeout(() => {
@@ -107,6 +130,16 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
 function loadMoreMessages() {
     currentPage++;
     renderMessages(true, false);
+}
+
+function loadNewerMessages() {
+    if (currentPage > 1) {
+        currentPage--;
+        renderMessages(false, false);
+        // 滚动到顶部以便用户从上往下阅读
+        const area = document.getElementById('message-area');
+        if (area) area.scrollTop = 0;
+    }
 }
 
 function createMessageBubbleElement(message, isContinuous = false) {
@@ -214,7 +247,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
 
         const bubbleRow = document.createElement('div');
         bubbleRow.className = 'message-bubble-row';
-        const timeString = `${pad(new Date(timestamp).getHours())}:${pad(new Date(timestamp).getMinutes())}`;
+        const timeString = formatTimestampByFormat(timestamp, chat);
         
         const bubbleElement = document.createElement('div');
         bubbleElement.className = 'message-bubble received bilingual-bubble';
@@ -427,7 +460,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         }
         bubbleTheme = theme.received;
     }
-    const timeString = `${pad(new Date(timestamp).getHours())}:${pad(new Date(timestamp).getMinutes())}`;
+    const timeString = formatTimestampByFormat(timestamp, chat);
     wrapper.className = `message-wrapper ${isSent ? 'sent' : 'received'}`;
     if (message.isContextDisabled) wrapper.classList.add('context-disabled');
     if (currentChatType === 'group' && !isSent) {

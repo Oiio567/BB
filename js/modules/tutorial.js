@@ -395,6 +395,7 @@ function renderTutorialContent() {
         { key: 'groups', label: '群聊' },
         { key: 'worldBooks', label: '世界书' },
         { key: 'myStickers', label: '我的表情' },
+        { key: 'theaterData', label: '小剧场（剧情、预设、API设置）' },
         { key: 'globalSettings', label: '全局设置（API、壁纸、主题等）' }
     ];
     const partialExportModalId = 'partial-export-modal';
@@ -890,6 +891,24 @@ function renderTutorialContent() {
             let cleanCount = 0;
             const report = [];
 
+            // 先收集世界书引用（在删除角色/群聊之前），避免误删被引用的世界书
+            const usedWorldBookIds = new Set();
+            if (db.characters && Array.isArray(db.characters)) {
+                db.characters.forEach(char => {
+                    if (char.worldBookIds && Array.isArray(char.worldBookIds)) {
+                        char.worldBookIds.forEach(id => usedWorldBookIds.add(id));
+                    }
+                });
+            }
+            if (db.groups && Array.isArray(db.groups)) {
+                db.groups.forEach(group => {
+                    if (group.worldBookIds && Array.isArray(group.worldBookIds)) {
+                        group.worldBookIds.forEach(id => usedWorldBookIds.add(id));
+                    }
+                });
+            }
+
+            // 清理完全没有聊天记录的角色（保留有greeting等至少1条消息的角色）
             if (db.characters && Array.isArray(db.characters)) {
                 const beforeCount = db.characters.length;
                 db.characters = db.characters.filter(char => {
@@ -916,22 +935,8 @@ function renderTutorialContent() {
                 }
             }
 
+            // 使用之前收集的引用来清理世界书
             if (db.worldBooks && Array.isArray(db.worldBooks)) {
-                const usedWorldBookIds = new Set();
-                if (db.characters) {
-                    db.characters.forEach(char => {
-                        if (char.worldBookIds && Array.isArray(char.worldBookIds)) {
-                            char.worldBookIds.forEach(id => usedWorldBookIds.add(id));
-                        }
-                    });
-                }
-                if (db.groups) {
-                    db.groups.forEach(group => {
-                        if (group.worldBookIds && Array.isArray(group.worldBookIds)) {
-                            group.worldBookIds.forEach(id => usedWorldBookIds.add(id));
-                        }
-                    });
-                }
                 const beforeCount = db.worldBooks.length;
                 db.worldBooks = db.worldBooks.filter(wb => usedWorldBookIds.has(wb.id));
                 const removed = beforeCount - db.worldBooks.length;
@@ -941,10 +946,14 @@ function renderTutorialContent() {
                 }
             }
 
+            // 表情包：只清理真正无效的（无data字段或data为空）
             if (db.myStickers && Array.isArray(db.myStickers)) {
                 const beforeCount = db.myStickers.length;
                 db.myStickers = db.myStickers.filter(sticker => {
-                    return sticker && sticker.url && String(sticker.url).trim() !== '';
+                    if (!sticker) return false;
+                    const hasData = sticker.data && String(sticker.data).trim() !== '';
+                    const hasUrl = sticker.url && String(sticker.url).trim() !== '';
+                    return hasData || hasUrl;
                 });
                 const removed = beforeCount - db.myStickers.length;
                 if (removed > 0) {
@@ -1243,6 +1252,13 @@ async function createFullBackupData() {
     return backupData;
 }
 
+// 小剧场相关的所有 db 键（用于分类导出/导入）
+const THEATER_DB_KEYS = [
+    'theaterScenarios', 'theaterPromptPresets',
+    'theaterHtmlScenarios', 'theaterHtmlPromptPresets',
+    'theaterMode', 'theaterApiSettings'
+];
+
 // 分类导出：只包含选中的表
 async function createPartialBackupData(selectedKeys) {
     const keys = window.globalSettingKeysForBackup || [];
@@ -1251,6 +1267,9 @@ async function createPartialBackupData(selectedKeys) {
         if (key === 'globalSettings') {
             result.globalSettings = {};
             keys.forEach(k => { result.globalSettings[k] = db[k] !== undefined ? JSON.parse(JSON.stringify(db[k])) : undefined; });
+        } else if (key === 'theaterData') {
+            result.theaterData = {};
+            THEATER_DB_KEYS.forEach(k => { result.theaterData[k] = db[k] !== undefined ? JSON.parse(JSON.stringify(db[k])) : undefined; });
         } else if (db[key] !== undefined) {
             result[key] = JSON.parse(JSON.stringify(db[key]));
         }
@@ -1268,6 +1287,8 @@ async function importPartialBackupData(data) {
         for (const key of tables) {
             if (key === 'globalSettings' && data.globalSettings) {
                 Object.keys(data.globalSettings).forEach(k => { db[k] = data.globalSettings[k]; });
+            } else if (key === 'theaterData' && data.theaterData) {
+                Object.keys(data.theaterData).forEach(k => { db[k] = data.theaterData[k]; });
             } else if (data[key] !== undefined) {
                 db[key] = data[key];
             }
@@ -1286,13 +1307,15 @@ async function importPartialBackupData(data) {
 async function importBackupData(data) {
     const startTime = Date.now();
     try {
-        await Promise.all([
+        const clearTasks = [
             dexieDB.characters.clear(),
             dexieDB.groups.clear(),
             dexieDB.worldBooks.clear(),
             dexieDB.myStickers.clear(),
             dexieDB.globalSettings.clear()
-        ]);
+        ];
+        if (dexieDB.archives) clearTasks.push(dexieDB.archives.clear());
+        await Promise.all(clearTasks);
         showToast('正在清空旧数据...');
 
         let convertedData = data;

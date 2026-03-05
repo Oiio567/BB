@@ -114,7 +114,8 @@ function setupGroupChatSystem() {
     const groupAutoSaveChanges = [
         'setting-group-theme-color', 'setting-group-use-custom-css', 'setting-group-show-timestamp',
         'setting-group-show-notice', 'setting-group-allow-gossip', 'setting-group-avatar-radius',
-        'setting-group-bilingual-mode', 'setting-group-bilingual-style', 'setting-group-auto-journal-enabled'
+        'setting-group-bilingual-mode', 'setting-group-bilingual-style', 'setting-group-auto-journal-enabled',
+        'setting-group-timestamp-format'
     ];
     groupAutoSaveChanges.forEach(id => {
         const el = document.getElementById(id);
@@ -985,6 +986,7 @@ function loadGroupSettingsToSidebar() {
     document.getElementById('setting-group-title-layout').value = group.titleLayout || 'left';
     document.getElementById('setting-group-show-timestamp').checked = group.showTimestamp || false;
     document.getElementById('setting-group-timestamp-style').value = group.timestampStyle || 'bubble';
+    document.getElementById('setting-group-timestamp-format').value = group.timestampFormat || 'hm';
     document.getElementById('setting-group-allow-gossip').checked = group.allowGossip || false;
 
     const bilingualModeCheckbox = document.getElementById('setting-group-bilingual-mode');
@@ -1167,6 +1169,7 @@ async function saveGroupSettingsFromSidebar(showToastFlag = true) {
 
     group.showTimestamp = document.getElementById('setting-group-show-timestamp').checked;
     group.timestampStyle = document.getElementById('setting-group-timestamp-style').value;
+    group.timestampFormat = document.getElementById('setting-group-timestamp-format').value;
     
     const oldAllowGossip = group.allowGossip || false;
     const newAllowGossip = document.getElementById('setting-group-allow-gossip').checked;
@@ -1328,13 +1331,15 @@ function generateGroupSystemPrompt(group) {
 
             // 私聊总结（收藏的记忆/日记）
             let memberSummaryText = '';
-            if (perMemberSummaryCount > 0) {
-                let fav = (char.memoryJournals || []).filter(j => j.isFavorited);
-                if (fav.length > perMemberSummaryCount) {
-                    fav = fav
-                        .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-                        .slice(0, perMemberSummaryCount);
-                }
+            // 0 表示读取全部收藏总结，> 0 表示只读取最近的N条
+            let fav = (char.memoryJournals || []).filter(j => j.isFavorited);
+            if (perMemberSummaryCount > 0 && fav.length > perMemberSummaryCount) {
+                // 如果设置了数量限制且总数超过限制，则只取最近的N条
+                fav = fav
+                    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+                    .slice(0, perMemberSummaryCount);
+            }
+            if (fav.length > 0) {
                 memberSummaryText = fav
                     .map(j => `标题：${j.title}\n内容：${j.content}`)
                     .join('\n\n---\n\n');
