@@ -1618,6 +1618,7 @@
                             <div class="kkt-item-control">
                                 <select id="minimax-domain"
                                     style="border:none; background:transparent; text-align:right; direction: rtl; appearance: none; -webkit-appearance: none; padding-right: 15px;">
+                                    <option value="api.minimaxi.chat">国际 (api.minimaxi.chat)</option>
                                     <option value="api.minimaxi.com">国际 (api.minimaxi.com)</option>
                                     <option value="api.minimax.chat">国内 (api.minimax.chat)</option>
                                 </select>
@@ -1725,6 +1726,7 @@
                             <div class="kkt-item-control">
                                 <select id="minimax-user-domain"
                                     style="border:none; background:transparent; text-align:right; direction: rtl; appearance: none; -webkit-appearance: none; padding-right: 15px;">
+                                    <option value="api.minimaxi.chat">国际 (api.minimaxi.chat)</option>
                                     <option value="api.minimaxi.com">国际 (api.minimaxi.com)</option>
                                     <option value="api.minimax.chat">国内 (api.minimax.chat)</option>
                                 </select>
@@ -1987,7 +1989,7 @@
                     </div>
                     <!-- 正则规则列表 -->
                     <div class="editor-section">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                        <div class="rf-rules-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                             <label style="font-weight:600;">过滤规则</label>
                             <button type="button" class="btn btn-small" id="rf-add-rule-btn">+ 添加规则</button>
                         </div>
@@ -2357,7 +2359,7 @@
         <!-- Profile Card Modal -->
         <div id="profile-card-modal" class="modal-overlay">
             <div class="modal-window">
-                <div class="pc-header">
+                <div class="pc-header" id="pc-header" title="点击更换背景图">
                     <img src="" class="pc-avatar" id="pc-avatar">
                 </div>
                 <div class="pc-content">
@@ -2403,6 +2405,28 @@
                         </button>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- 资料卡背景图更换弹窗 -->
+        <div id="pc-banner-modal" class="modal-overlay">
+            <div class="modal-window">
+                <h3>更换卡片背景</h3>
+                <form id="pc-banner-form">
+                    <div id="pc-banner-preview"
+                        style="width: 100%; height: 150px; border: 2px dashed #ddd; border-radius: 10px; margin: 0 auto 15px; display: flex; align-items: center; justify-content: center; color: #aaa; background-size: cover; background-position: center;">
+                        <span>预览</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="pc-banner-url-input">图片URL</label>
+                        <input type="url" id="pc-banner-url-input" class="form-group" placeholder="粘贴图片URL">
+                    </div>
+                    <p style="text-align:center; color:#888; margin: -10px 0 15px;">或</p>
+                    <input type="file" id="pc-banner-file-input" accept="image/*" style="display:none;">
+                    <label for="pc-banner-file-input" class="btn btn-secondary" style="width:100%; margin-bottom: 10px;">从本地上传</label>
+                    <button type="submit" class="btn btn-primary" style="margin-bottom: 8px;">保存</button>
+                    <button type="button" class="btn btn-neutral" id="pc-banner-reset-btn">重置为默认</button>
+                </form>
             </div>
         </div>
 
@@ -3112,6 +3136,163 @@
                                         </label>
                                     </div>
                                 </div>
+                                <div class="kkt-item">
+                                    <div class="kkt-item-label">视频通话真实摄像头</div>
+                                    <div class="kkt-item-control">
+                                        <label class="kkt-switch">
+                                            <input type="checkbox" id="setting-real-camera-enabled">
+                                            <span class="kkt-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="kkt-item-hint" id="real-camera-hint" style="padding: 0 16px 12px; font-size: 12px; color: #8e8e93; line-height: 1.4;">
+                                    开启后，视频通话时会在右上角显示你的真实摄像头画面，角色可以通过API识别你的画面内容。
+                                </div>
+                            </div>
+
+                            <!-- 小剧场设置 -->
+                            <div class="kkt-group" style="margin-top:15px;">
+                                <div class="kkt-item">
+                                    <div class="kkt-item-label">角色主动生成小剧场</div>
+                                    <div class="kkt-item-control">
+                                        <label class="kkt-switch">
+                                            <input type="checkbox" id="setting-char-theater-enabled">
+                                            <span class="kkt-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="kkt-item" style="padding-top: 0;">
+                                    <p class="kkt-item-hint" style="font-size: 12px; color: #999; margin: 0;">
+                                        开启后，角色会基于人设和聊天内容主动创作小剧场，存储在小剧场App中（以❤️标记）
+                                    </p>
+                                </div>
+                                <!-- 小剧场详细设置（仅开启时显示） -->
+                                <div id="setting-char-theater-options" style="display:none;">
+                                    <div class="kkt-item" style="border-top: 1px solid #f5f5f5;">
+                                        <div class="kkt-item-label">生成概率</div>
+                                        <div class="kkt-item-control" style="gap: 8px; flex: 1; justify-content: flex-end;">
+                                            <input type="range" id="setting-char-theater-probability"
+                                                min="0" max="100" value="20"
+                                                style="width: 100px; accent-color: #ff80ab;">
+                                            <span id="setting-char-theater-probability-value" style="font-size: 13px; color: #ff80ab; font-weight: 600; min-width: 34px; text-align: right;">20%</span>
+                                        </div>
+                                    </div>
+                                    <div class="kkt-item">
+                                        <div class="kkt-item-label">生成格式</div>
+                                        <div class="kkt-item-control">
+                                            <select id="setting-char-theater-format"
+                                                style="border:none; background:transparent; text-align:right; font-size: 14px;">
+                                                <option value="text">纯文字</option>
+                                                <option value="html">HTML</option>
+                                                <option value="both">两者皆可（随机选择）</option>
+                                            </select>
+                                            <span class="kkt-arrow">›</span>
+                                        </div>
+                                    </div>
+                                    <div class="kkt-item" style="border-top: 1px solid #f5f5f5;">
+                                        <div class="kkt-item-label">读取聊天记录条数</div>
+                                        <div class="kkt-item-control">
+                                            <input type="number" id="setting-char-theater-chat-count"
+                                                value="20" min="0" max="200"
+                                                style="width:50px; text-align:right; border:none; background: rgba(0,0,0,0.05); border-radius:4px;">
+                                        </div>
+                                    </div>
+                                    <div class="kkt-item">
+                                        <div class="kkt-item-label">读取日记总结条数</div>
+                                        <div class="kkt-item-control">
+                                            <input type="number" id="setting-char-theater-journal-count"
+                                                value="0" min="0" max="50"
+                                                style="width:50px; text-align:right; border:none; background: rgba(0,0,0,0.05); border-radius:4px;">
+                                        </div>
+                                    </div>
+                                    <!-- 世界书绑定（下拉分类多选） -->
+                                    <div style="border-top: 1px solid #f5f5f5; padding: 10px 16px 6px;">
+                                        <div class="kkt-item-label" style="margin-bottom:8px; font-size:13px; font-weight:600; color:#555;">绑定世界书（可多选）</div>
+                                        <div class="theater-multiselect-wrapper" style="font-size:13px;">
+                                            <div class="theater-multiselect-display" id="setting-char-theater-wb-display">
+                                                <span class="theater-multiselect-placeholder">请选择世界书（可选）</span>
+                                                <span class="theater-multiselect-arrow">▼</span>
+                                            </div>
+                                            <div class="theater-multiselect-dropdown" id="setting-char-theater-wb-dropdown">
+                                                <div class="theater-multiselect-options" id="setting-char-theater-wb-options"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- 提示词：预设选择 + 自定义 -->
+                                    <div style="padding: 8px 16px 10px; border-top: 1px solid #f5f5f5; margin-top:4px;">
+                                        <div class="kkt-item-label" style="margin-bottom:6px; font-size:13px; font-weight:600; color:#555;">剧情提示词</div>
+                                        <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+                                            <select id="setting-char-theater-prompt-preset"
+                                                style="flex:1; border:1px solid #eee; border-radius:8px; padding:6px 8px; font-size:12px; background:#fafafa; color:#555;">
+                                                <option value="">— 从预设中选择 —</option>
+                                            </select>
+                                            <button type="button" id="setting-char-theater-prompt-apply"
+                                                style="flex-shrink:0; padding:5px 10px; font-size:12px; border:none; border-radius:8px; background:linear-gradient(135deg,#ff80ab,#ffb3d1); color:#fff; cursor:pointer;">应用</button>
+                                        </div>
+                                        <textarea id="setting-char-theater-prompt"
+                                            style="width:100%; border:1px solid #eee; border-radius:8px; padding:8px; min-height:60px; font-size:13px; resize:vertical; box-sizing:border-box;"
+                                            placeholder="留空则使用默认提示词，或在此补充特殊要求（例如：请以诗歌形式创作）"></textarea>
+                                    </div>
+                                    <!-- char是否知道自己创建了小剧场 -->
+                                    <div class="kkt-item" style="border-top: 1px solid #f5f5f5;">
+                                        <div class="kkt-item-label" style="font-size:13px;">角色知道自己创作了小剧场</div>
+                                        <div class="kkt-item-control">
+                                            <label class="kkt-switch">
+                                                <input type="checkbox" id="setting-char-theater-self-aware">
+                                                <span class="kkt-slider"></span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div class="kkt-item" style="padding-top:0;">
+                                        <p class="kkt-item-hint" style="font-size:11px; color:#bbb; margin:0;">开启后角色会记得自己写过小剧场并在对话中表现出来</p>
+                                    </div>
+                                    <!-- 独立 API -->
+                                    <div class="kkt-item" style="border-top: 1px solid #f5f5f5;">
+                                        <div class="kkt-item-label" style="font-size:13px;">使用独立 API</div>
+                                        <div class="kkt-item-control">
+                                            <label class="kkt-switch">
+                                                <input type="checkbox" id="setting-char-theater-use-custom-api">
+                                                <span class="kkt-slider"></span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <div id="setting-char-theater-api-config" style="display:none;">
+                                        <div class="kkt-item" style="padding-top:0; flex-direction:column; align-items:flex-start; gap:6px;">
+                                            <div class="kkt-item-label" style="font-size:12px; color:#999; margin-bottom:2px;">读取预设</div>
+                                            <select id="setting-char-theater-api-preset"
+                                                style="width:100%; border:1px solid #eee; border-radius:8px; padding:6px 8px; font-size:13px;">
+                                                <option value="">— 选择预设配置 —</option>
+                                            </select>
+                                        </div>
+                                        <div class="kkt-item" style="border-top:1px solid #f5f5f5;">
+                                            <div class="kkt-item-label" style="font-size:13px;">API URL</div>
+                                            <div class="kkt-item-control" style="flex:1; justify-content:flex-end;">
+                                                <input type="text" id="setting-char-theater-api-url"
+                                                    placeholder="https://..."
+                                                    style="width:100%; max-width:180px; border:none; background:transparent; text-align:right; font-size:13px; color:#555;">
+                                            </div>
+                                        </div>
+                                        <div class="kkt-item">
+                                            <div class="kkt-item-label" style="font-size:13px;">API Key</div>
+                                            <div class="kkt-item-control" style="flex:1; justify-content:flex-end;">
+                                                <input type="password" id="setting-char-theater-api-key"
+                                                    placeholder="sk-..."
+                                                    style="width:100%; max-width:180px; border:none; background:transparent; text-align:right; font-size:13px; color:#555;">
+                                            </div>
+                                        </div>
+                                        <div class="kkt-item" style="flex-wrap:wrap; gap:6px;">
+                                            <div class="kkt-item-label" style="font-size:13px;">模型</div>
+                                            <div class="kkt-item-control" style="flex:1; justify-content:flex-end; gap:6px;">
+                                                <select id="setting-char-theater-api-model"
+                                                    style="flex:1; max-width:160px; border:1px solid #eee; border-radius:8px; padding:4px 6px; font-size:12px; color:#555; background:#fafafa;">
+                                                    <option value="">— 先拉取模型 —</option>
+                                                </select>
+                                                <button type="button" id="setting-char-theater-fetch-models-btn"
+                                                    style="padding:4px 10px; font-size:12px; border:1px solid #ddd; border-radius:8px; background:#f5f5f5; color:#555; cursor:pointer; white-space:nowrap;">拉取</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- 记忆存档库 -->
@@ -3794,6 +3975,8 @@
                             <select id="theater-prompt-preset-select" class="theater-prompt-select">
                                 <option value="">选择预设提示词</option>
                             </select>
+                        </div>
+                        <div class="theater-prompt-buttons">
                             <button id="theater-save-prompt-btn" class="theater-save-prompt-btn">保存为预设</button>
                             <button id="theater-manage-prompt-btn" class="theater-save-prompt-btn">管理预设</button>
                         </div>
@@ -3866,11 +4049,15 @@
                     <!-- 详情内容将由 JS 动态填充 -->
                 </div>
                 <div class="theater-detail-actions">
-                    <button id="theater-favorite-btn" class="theater-action-btn theater-favorite-btn">收藏</button>
-                    <button id="theater-save-edit-btn" class="theater-action-btn theater-save-edit-btn" style="display: none;">保存</button>
-                    <button id="theater-share-btn" class="theater-action-btn theater-share-btn">分享到聊天框</button>
-                    <button id="theater-edit-category-btn" class="theater-action-btn theater-edit-category-btn">修改分类</button>
-                    <button id="theater-delete-btn" class="theater-action-btn theater-delete-btn">删除</button>
+                    <div class="theater-action-row-first">
+                        <button id="theater-favorite-btn" class="theater-action-btn theater-favorite-btn">收藏</button>
+                        <button id="theater-save-edit-btn" class="theater-action-btn theater-save-edit-btn" style="display: none;">保存</button>
+                        <button id="theater-edit-category-btn" class="theater-action-btn theater-edit-category-btn">修改分类</button>
+                        <button id="theater-delete-btn" class="theater-action-btn theater-delete-btn">删除</button>
+                    </div>
+                    <div class="theater-action-row-second">
+                        <button id="theater-share-btn" class="theater-action-btn theater-share-btn">分享到聊天框</button>
+                    </div>
                 </div>
             </main>
         </div>
@@ -3893,11 +4080,15 @@
                     <!-- HTML 模式详情内容将由 JS 动态填充 -->
                 </div>
                 <div class="theater-detail-actions">
-                    <button id="theater-html-favorite-btn" class="theater-action-btn theater-favorite-btn">收藏</button>
-                    <button id="theater-html-save-edit-btn" class="theater-action-btn theater-save-edit-btn" style="display: none;">保存</button>
-                    <button id="theater-html-share-btn" class="theater-action-btn theater-share-btn">分享到聊天框</button>
-                    <button id="theater-html-edit-category-btn" class="theater-action-btn theater-edit-category-btn">修改分类</button>
-                    <button id="theater-html-delete-btn" class="theater-action-btn theater-delete-btn">删除</button>
+                    <div class="theater-action-row-first">
+                        <button id="theater-html-favorite-btn" class="theater-action-btn theater-favorite-btn">收藏</button>
+                        <button id="theater-html-save-edit-btn" class="theater-action-btn theater-save-edit-btn" style="display: none;">保存</button>
+                        <button id="theater-html-edit-category-btn" class="theater-action-btn theater-edit-category-btn">修改分类</button>
+                        <button id="theater-html-delete-btn" class="theater-action-btn theater-delete-btn">删除</button>
+                    </div>
+                    <div class="theater-action-row-second">
+                        <button id="theater-html-share-btn" class="theater-action-btn theater-share-btn">分享到聊天框</button>
+                    </div>
                 </div>
             </main>
         </div>
@@ -3942,27 +4133,6 @@
                     </div>
 
                     <form id="group-settings-form">
-                        <!-- 聊天快速定位（回顶/回底） -->
-                        <div class="kkt-group">
-                            <div class="kkt-item kkt-item-clickable" id="group-chat-scroll-to-top-current-btn" style="cursor:pointer;">
-                                <div class="kkt-item-label">回顶（当前已加载）</div>
-                                <div class="kkt-item-control">
-                                    <span class="kkt-arrow">›</span>
-                                </div>
-                            </div>
-                            <div class="kkt-item kkt-item-clickable" id="group-chat-scroll-to-top-all-btn" style="cursor:pointer;">
-                                <div class="kkt-item-label">回顶（全部）</div>
-                                <div class="kkt-item-control">
-                                    <span class="kkt-arrow">›</span>
-                                </div>
-                            </div>
-                            <div class="kkt-item kkt-item-clickable" id="group-chat-scroll-to-bottom-btn" style="cursor:pointer;">
-                                <div class="kkt-item-label">聊天回底</div>
-                                <div class="kkt-item-control">
-                                    <span class="kkt-arrow">›</span>
-                                </div>
-                            </div>
-                        </div>
                         <!-- 我的信息分组 -->
                         <div class="kkt-group">
                             <div class="kkt-item">
@@ -4091,6 +4261,28 @@
                                 <div id="setting-group-sticker-groups-container"
                                     style="width:100%; max-height: 120px; overflow-y: auto; border: 1px solid #eee; padding: 10px; border-radius: 8px;">
                                     <!-- JS populate -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 聊天快速定位（回顶/回底） -->
+                        <div class="kkt-group" style="margin-top:15px;">
+                            <div class="kkt-item kkt-item-clickable" id="group-chat-scroll-to-top-current-btn" style="cursor:pointer;">
+                                <div class="kkt-item-label">回顶（当前已加载）</div>
+                                <div class="kkt-item-control">
+                                    <span class="kkt-arrow">›</span>
+                                </div>
+                            </div>
+                            <div class="kkt-item kkt-item-clickable" id="group-chat-scroll-to-top-all-btn" style="cursor:pointer;">
+                                <div class="kkt-item-label">回顶（全部）</div>
+                                <div class="kkt-item-control">
+                                    <span class="kkt-arrow">›</span>
+                                </div>
+                            </div>
+                            <div class="kkt-item kkt-item-clickable" id="group-chat-scroll-to-bottom-btn" style="cursor:pointer;">
+                                <div class="kkt-item-label">聊天回底</div>
+                                <div class="kkt-item-control">
+                                    <span class="kkt-arrow">›</span>
                                 </div>
                             </div>
                         </div>
@@ -5116,6 +5308,12 @@
 
         <!-- SCENE 2: 通话界面 -->
         <div id="vc-scene-call" class="vc-scene vc-hidden">
+            <!-- 用户真实摄像头画中画 -->
+            <div id="vc-user-camera-pip" class="vc-user-camera-pip" style="display:none;">
+                <video id="vc-user-camera-video" autoplay playsinline muted></video>
+                <div class="vc-pip-flip-hint">点击翻转</div>
+            </div>
+            <canvas id="vc-camera-capture-canvas" style="display:none;"></canvas>
             <div class="vc-call-header">
                 <div class="vc-contact-info">
                     <div class="name" id="vc-call-name">Unknown</div>

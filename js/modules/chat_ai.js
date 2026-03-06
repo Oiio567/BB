@@ -141,7 +141,41 @@ async function getAiReply(chatId, chatType, isBackground = false, isSummary = fa
                         return null;
                     }).filter(p => p);
                 } else {
-                    parts = [{text: msg.content}];
+                    let content = msg.content || '';
+                    // 展开小剧场分享卡片为实际内容，供 AI 读取
+                    const theaterShareMatch = content.match(/\[小剧场分享[：:](.+?)\]/);
+                    if (theaterShareMatch) {
+                        const scenarioId = theaterShareMatch[1];
+                        let scenario = null;
+                        if (typeof db !== 'undefined' && db) {
+                            if (Array.isArray(db.theaterScenarios)) {
+                                scenario = db.theaterScenarios.find(s => s.id === scenarioId);
+                            }
+                            if (!scenario && Array.isArray(db.theaterHtmlScenarios)) {
+                                scenario = db.theaterHtmlScenarios.find(s => s.id === scenarioId);
+                            }
+                        }
+                        if (scenario) {
+                            let readableContent = scenario.content || '';
+                            // HTML 模式：剥除标签，只保留可读文本（无论用户分享还是 char 生成）
+                            if (scenario.mode === 'html' || /<[^>]+>/.test(readableContent)) {
+                                readableContent = readableContent
+                                    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                                    .replace(/<[^>]+>/g, ' ')
+                                    .replace(/\s{2,}/g, ' ')
+                                    .trim();
+                            }
+                            const title = scenario.title || '小剧场';
+                            // 所有小剧场都不截断，使用完整内容
+                            const excerpt = readableContent;
+                            // 替换为包含实际内容的文本
+                            content = content.replace(
+                                /\[小剧场分享[：:].+?\]/,
+                                `（我刚刚写了一篇小剧场，标题是「${title}」。以下是我写的内容：\n${excerpt}）`
+                            );
+                        }
+                    }
+                    parts = [{text: content}];
                 }
 
                 if (prefix) {
@@ -219,6 +253,39 @@ async function getAiReply(chatId, chatType, isBackground = false, isSummary = fa
                        }).filter(p => p);
                    } else {
                        content = prefix + msg.content;
+                       // 展开小剧场分享卡片为实际内容，供 AI 读取
+                       const theaterShareMatch = content.match(/\[小剧场分享[：:](.+?)\]/);
+                       if (theaterShareMatch) {
+                           const scenarioId = theaterShareMatch[1];
+                           let scenario = null;
+                           if (typeof db !== 'undefined' && db) {
+                               if (Array.isArray(db.theaterScenarios)) {
+                                   scenario = db.theaterScenarios.find(s => s.id === scenarioId);
+                               }
+                               if (!scenario && Array.isArray(db.theaterHtmlScenarios)) {
+                                   scenario = db.theaterHtmlScenarios.find(s => s.id === scenarioId);
+                               }
+                           }
+                           if (scenario) {
+                               let readableContent = scenario.content || '';
+                               // HTML 模式：剥除标签，只保留可读文本（无论用户分享还是 char 生成）
+                               if (scenario.mode === 'html' || /<[^>]+>/.test(readableContent)) {
+                                   readableContent = readableContent
+                                       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                                       .replace(/<[^>]+>/g, ' ')
+                                       .replace(/\s{2,}/g, ' ')
+                                       .trim();
+                               }
+                               const title = scenario.title || '小剧场';
+                               // 所有小剧场都不截断，使用完整内容
+                               const excerpt = readableContent;
+                               // 替换为包含实际内容的文本
+                               content = content.replace(
+                                   /\[小剧场分享[：:].+?\]/,
+                                   `（我刚刚写了一篇小剧场，标题是「${title}」。以下是我写的内容：\n${excerpt}）`
+                               );
+                           }
+                       }
                    }
                    if (msg.role === 'user' && chatType === 'private' && chat.characterAutoFavoriteEnabled) {
                        if (typeof content === 'string') {
@@ -354,7 +421,10 @@ async function getAiReply(chatId, chatType, isBackground = false, isSummary = fa
             isGenerating = false;
             getReplyBtn.disabled = false;
             regenerateBtn.disabled = false;
-            typingIndicator.style.display = 'none';
+            // 如果正在生成小剧场，不隐藏提示（让小剧场生成过程显示提示）
+            if (!typingIndicator || typingIndicator.getAttribute('data-theater-generating') !== 'true') {
+                typingIndicator.style.display = 'none';
+            }
         }
     }
 }
@@ -734,14 +804,6 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
 
                     const rawContent = item.content.trim();
                     let finalContent = rawContent;
-                    let revealToMain = null;
-                    if (chat.source === 'forum' && chat.linkedCharId && rawContent.includes('[REVEAL]')) {
-                        const idx = rawContent.indexOf('[REVEAL]');
-                        finalContent = rawContent.slice(0, idx).trim();
-                        const afterReveal = rawContent.slice(idx + '[REVEAL]'.length).trim();
-                        const linkedChar = db.characters && db.characters.find(c => c.id === chat.linkedCharId);
-                        revealToMain = afterReveal || (linkedChar ? '其实我就是' + (linkedChar.realName || linkedChar.remarkName) + '啦～' : '没想到吧，是我哦～');
-                    }
 
                     // 应用正则过滤
                     if (typeof applyRegexFilter === 'function') {
@@ -766,23 +828,6 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
 
                     chat.history.push(message);
                     addMessageBubble(message, targetChatId, targetChatType);
-
-                    if (revealToMain !== null && chat.linkedCharId) {
-                        const mainChar = db.characters && db.characters.find(c => c.id === chat.linkedCharId);
-                        if (mainChar && mainChar.history) {
-                            const revealMsg = {
-                                id: 'msg_reveal_' + Date.now() + '_' + Math.random(),
-                                role: 'assistant',
-                                content: revealToMain,
-                                parts: [{ type: 'text', text: revealToMain }],
-                                timestamp: Date.now()
-                            };
-                            mainChar.history.push(revealMsg);
-                            if (typeof saveData === 'function') saveData();
-                            if (typeof renderChatList === 'function') renderChatList();
-                            showToast((mainChar.remarkName || mainChar.realName) + ' 揭穿身份了！');
-                        }
-                    }
                 }
 
             } else if (targetChatType === 'group') {
@@ -907,6 +952,12 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         // 回复全部结束后检查是否达到自动总结间隔，若达到则静默总结到完整区间（如 1-100）
         if (typeof checkAndTriggerAutoJournal === 'function') {
             setTimeout(() => checkAndTriggerAutoJournal(chat), 500);
+        }
+
+        // 角色主动生成小剧场（仅私聊，按概率触发）
+        // 直接调用，无延迟——generateCharTheater 内部会立即推送通知气泡
+        if (targetChatType === 'private' && typeof maybeGenerateCharTheater === 'function') {
+            maybeGenerateCharTheater(targetChatId);
         }
     }
 }
@@ -1052,7 +1103,7 @@ function generatePrivateSystemPrompt(character) {
     prompt += `<char_settings>\n`;
     prompt += `1. 你的角色名是：${character.realName}。我的称呼是：${character.myName}。你的当前状态是：${character.status || '在线'}。\n`;
     if (linkedChar) {
-        prompt += `【小号身份】你实际上是以论坛小号在与用户聊天。你的真实身份是：${linkedChar.realName}。请用真实身份的人设和性格来回复（可偶尔露出与本人相似的蛛丝马迹），但不要主动暴露身份。若你觉得适当时（例如用户搞暧昧、或戏剧性时机），可在回复中插入 [REVEAL]，[REVEAL] 后的内容将作为你本尊对用户说的话发到本尊对话里；若不揭穿则不要写 [REVEAL]。\n`;
+        prompt += `【小号身份】你实际上是以论坛小号在与用户聊天。你的真实身份是：${linkedChar.realName}。请用真实身份的人设和性格来回复（可偶尔露出与本人相似的蛛丝马迹），但不要主动暴露身份。\n`;
         prompt += `2. 你的角色设定是：${getEffectivePersona(linkedChar)}\n`;
     } else {
         prompt += `2. 你的角色设定是：${getEffectivePersona(character)}\n`;
@@ -1604,6 +1655,13 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate) {
         systemPrompt += `仅有声音消息需要翻译，画面/环境音消息还是以中文输出。`;
     }
 
+    // === 真实摄像头模式提示词注入 ===
+    const realCameraActive = typeof VideoCallModule !== 'undefined' && VideoCallModule.state.realCameraActive;
+    if (realCameraActive) {
+        systemPrompt += `\n【真实摄像头模式】\n`;
+        systemPrompt += `${chat.myName}已开启真实摄像头，你可以通过附带的图片看到${chat.myName}的真实画面。请根据你看到的画面内容自然地融入对话中（比如评论对方的穿着、表情、动作、环境等），但不要每次都刻意提及，保持自然。如果图片模糊或看不清，也不必强行描述。\n`;
+    }
+
     systemPrompt += `【输出格式】\n`;
     systemPrompt += `请严格按照以下格式输出（可以发送多条）：\n`;
     systemPrompt += `${callType === 'video' ? `[${chat.realName}的画面/环境音：描述画面动作或环境声音]\n[${chat.realName}的声音：${chat.realName}说话的内容]` : `[${chat.realName}的环境音：描述环境声音]\n[${chat.realName}的声音：${chat.realName}说话的内容]`}\n`;
@@ -1612,7 +1670,10 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate) {
     // 将 callContext 转换为 API 格式
     const messages = [{role: 'system', content: systemPrompt}];
     
-    callContext.forEach(msg => {
+    // 获取真实摄像头截图（如果有）
+    const capturedFrame = (typeof VideoCallModule !== 'undefined' && VideoCallModule.state.lastCapturedFrame) ? VideoCallModule.state.lastCapturedFrame : null;
+
+    callContext.forEach((msg, idx) => {
         const role = msg.role === 'ai' ? 'assistant' : 'user';
         let content = msg.content;
         
@@ -1632,7 +1693,20 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate) {
                 content = `[${chat.realName}的声音：${cleanContent}]`;
             }
         }
-        messages.push({role, content});
+
+        // 在最后一条用户消息上附加摄像头截图
+        const isLastUserMsg = msg.role === 'user' && idx === callContext.length - 1;
+        if (isLastUserMsg && capturedFrame && realCameraActive) {
+            messages.push({
+                role,
+                content: [
+                    { type: 'text', text: content },
+                    { type: 'image_url', image_url: { url: capturedFrame } }
+                ]
+            });
+        } else {
+            messages.push({role, content});
+        }
     });
 
     // === 插入 CoT 序列 (如果开启) ===
@@ -1681,10 +1755,24 @@ async function getCallReply(chat, callType, callContext, onStreamUpdate) {
 
     // 适配 Gemini
     if (provider === 'gemini') {
-         const contents = messages.filter(m => m.role !== 'system').map(m => ({
-            role: m.role === 'assistant' ? 'model' : 'user',
-            parts: [{text: m.content}]
-        }));
+         const contents = messages.filter(m => m.role !== 'system').map(m => {
+            const role = m.role === 'assistant' ? 'model' : 'user';
+            let parts;
+            if (Array.isArray(m.content)) {
+                // 多模态消息（文本+图片）
+                parts = m.content.map(p => {
+                    if (p.type === 'text') return { text: p.text };
+                    if (p.type === 'image_url' && p.image_url && p.image_url.url) {
+                        const match = p.image_url.url.match(/^data:(image\/(.+));base64,(.*)$/);
+                        if (match) return { inline_data: { mime_type: match[1], data: match[3] } };
+                    }
+                    return null;
+                }).filter(Boolean);
+            } else {
+                parts = [{ text: m.content }];
+            }
+            return { role, parts };
+        });
         requestBody.contents = contents;
         
         // 合并所有 system 消息到 system_instruction

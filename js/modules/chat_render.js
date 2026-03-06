@@ -69,6 +69,8 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
             
             for (let i = currentIndexInHistory - 1; i >= 0; i--) {
                 const candidate = chat.history[i];
+                // 跳过隐藏的上下文消息（如角色自知消息），不影响连续消息判断
+                if (candidate.hiddenFromDisplay) continue;
                 if (!invisibleRegex.test(candidate.content)) {
                     prevMsg = candidate;
                     break;
@@ -158,6 +160,8 @@ function createMessageBubbleElement(message, isContinuous = false) {
 
     // 拦截：如果是状态更新、思考过程或转账指令消息，且没开调试模式，直接不渲染
     if ((isStatusUpdate || isThinking || message.isTransferAction) && !isDebugMode) return null;
+    // 拦截：hiddenFromDisplay 标记的消息（如角色自知上下文消息），不渲染成气泡
+    if (message.hiddenFromDisplay && !isDebugMode) return null;
 
     // ... 后续代码不变 ...
 
@@ -434,7 +438,65 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         if (updateStatusMatch) bubbleText = `${updateStatusMatch[1]} 更新状态为：${updateStatusMatch[2]}`;
         if (callInviteMatch) bubbleText = `${callInviteMatch[1]}向${callInviteMatch[2]}发起了${callInviteMatch[3]}通话`;
         if (callRejectMatch) bubbleText = `${callRejectMatch[1]}拒绝了${callRejectMatch[2]}的${callRejectMatch[3]}通话`;
-        wrapper.innerHTML = `<div class="system-notification-bubble">${bubbleText}</div>`;
+        // 如果消息携带了 theaterScenarioId，则气泡可点击跳转到对应小剧场
+        if (message.theaterScenarioId) {
+            const bubble = document.createElement('div');
+            bubble.className = 'system-notification-bubble theater-notify-bubble';
+            bubble.style.cssText = 'cursor:pointer; text-decoration:underline dotted rgba(0,0,0,0.25);';
+            bubble.title = '点击查看小剧场';
+            bubble.textContent = bubbleText + ' ▶';
+            bubble.addEventListener('click', () => {
+                // 调试模式下不跳转（气泡已显示原始内容，供调试查看）
+                if (typeof isDebugMode !== 'undefined' && isDebugMode) return;
+                const scId = message.theaterScenarioId;
+                const scMode = message.theaterScenarioMode || 'text';
+                // 切换到小剧场App，然后打开对应的场景详情
+                // 标记：从聊天气泡打开，返回时需回到聊天界面
+                window._theaterDetailFromChat = true;
+                if (typeof openApp === 'function') openApp('theater');
+                // 稍作延迟等待视图切换后再查找场景
+                setTimeout(() => {
+                    // 直接根据 scMode 查找对应模式的小剧场，无需切换 theaterCurrentMode
+                    let scenario = null;
+                    if (scMode === 'html') {
+                        // HTML 模式：直接从 db.theaterHtmlScenarios 查找
+                        if (typeof db !== 'undefined' && db.theaterHtmlScenarios) {
+                            scenario = db.theaterHtmlScenarios.find(s => s.id === scId);
+                        }
+                    } else {
+                        // 文本模式：直接从 db.theaterScenarios 查找
+                        if (typeof db !== 'undefined' && db.theaterScenarios) {
+                            scenario = db.theaterScenarios.find(s => s.id === scId);
+                        }
+                    }
+                    // 如果按模式找不到，尝试在两种模式中都查找（兼容旧数据）
+                    if (!scenario) {
+                        if (typeof db !== 'undefined') {
+                            if (db.theaterHtmlScenarios) {
+                                scenario = db.theaterHtmlScenarios.find(s => s.id === scId);
+                            }
+                            if (!scenario && db.theaterScenarios) {
+                                scenario = db.theaterScenarios.find(s => s.id === scId);
+                            }
+                        }
+                    }
+                    if (scenario) {
+                        // 根据 scenario.mode 或 scMode 决定调用哪个详情函数
+                        const actualMode = scenario.mode || scMode;
+                        if (actualMode === 'html' && typeof showTheaterHtmlScenarioDetail === 'function') {
+                            showTheaterHtmlScenarioDetail(scenario);
+                        } else if (typeof showTheaterScenarioDetail === 'function') {
+                            showTheaterScenarioDetail(scenario);
+                        }
+                    } else {
+                        if (typeof showToast === 'function') showToast('未找到该小剧场，可能已被删除');
+                    }
+                }, 300);
+            });
+            wrapper.appendChild(bubble);
+        } else {
+            wrapper.innerHTML = `<div class="system-notification-bubble">${bubbleText}</div>`;
+        }
         return wrapper;
     }
 
@@ -781,10 +843,12 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         if (scenario) {
             bubbleElement.addEventListener('click', () => {
                 try {
+                    // 标记：从聊天气泡打开，返回时需回到聊天界面
+                    window._theaterDetailFromChat = true;
                     if (scenario.mode === 'html' && typeof showTheaterHtmlScenarioDetail === 'function') {
                         showTheaterHtmlScenarioDetail(scenario);
                     } else if (typeof showTheaterScenarioDetail === 'function') {
-                    showTheaterScenarioDetail(scenario);
+                        showTheaterScenarioDetail(scenario);
                     }
                 } catch (e) {
                     console.error('Failed to open theater scenario detail:', e);
@@ -992,7 +1056,7 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
             bubbleElement.style.backgroundColor = bubbleTheme.bg;
             bubbleElement.style.color = bubbleTheme.text;
         }
-    } else if (message && Array.isArray(message.parts) && message.parts[0].type === 'html') {
+    } else if (message && Array.isArray(message.parts) && message.parts.length > 0 && message.parts[0].type === 'html') {
         bubbleElement = document.createElement('div');
         bubbleElement.className = `message-bubble ${isSent ? 'sent' : 'received'} html-bubble`;
         const htmlContent = message.parts[0].text;

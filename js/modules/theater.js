@@ -245,6 +245,7 @@ function renderTheaterScenarios() {
             <div class="theater-scenario-header">
                 <div class="theater-scenario-title">
                     ${scenario.isFavorite ? '<span class="theater-favorite-icon" style="color: #ffd700; margin-right: 5px;">★</span>' : ''}
+                    ${scenario.charGenerated ? '<span class="theater-char-generated-icon" title="由角色主动创作" style="margin-right: 4px;">❤️</span>' : ''}
                     ${DOMPurify.sanitize(scenario.title || '剧情')}
                 </div>
                 <div class="theater-scenario-badge">${DOMPurify.sanitize(category)}</div>
@@ -436,6 +437,7 @@ function showTheaterScenarioDetail(scenario) {
         <div class="theater-detail-header">
             <h2 class="theater-detail-title" style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px;">
                 ${scenario.isFavorite ? '<span class="theater-favorite-icon" style="color: #ffd700; margin-right: 5px;">★</span>' : ''}
+                ${scenario.charGenerated ? '<span title="由角色主动创作">❤️</span>' : ''}
                 ${scenario.isEditingTitle || (isEditing && !scenario.isEditing)
                     ? `<input type="text" id="theater-edit-title" class="theater-edit-title-input" value="${DOMPurify.sanitize(scenario.title || '剧情')}">`
                     : `<span class="theater-detail-title-text">${DOMPurify.sanitize(scenario.title || '剧情')}</span>${!isEditing ? '<button class="theater-edit-title-btn" id="theater-edit-title-btn">编辑标题</button>' : ''}`
@@ -513,6 +515,17 @@ function showTheaterScenarioDetail(scenario) {
     }
     
     switchScreen('theater-detail-screen');
+
+    // 若从聊天气泡跳转而来，将返回按钮的目标改为聊天界面
+    if (window._theaterDetailFromChat) {
+        window._theaterDetailFromChat = false;
+        const backBtn = document.querySelector('#theater-detail-screen .back-btn');
+        if (backBtn) backBtn.setAttribute('data-target', 'chat-room-screen');
+    } else {
+        // 恢复默认（防止上次从聊天跳转后遗留的覆盖）
+        const backBtn = document.querySelector('#theater-detail-screen .back-btn');
+        if (backBtn) backBtn.setAttribute('data-target', 'theater-screen');
+    }
 }
 
 // 更新世界书显示
@@ -1800,6 +1813,7 @@ function showTheaterHtmlScenarioDetail(scenario) {
         <div class="theater-detail-header">
             <h2 class="theater-detail-title" style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px;">
                 ${scenario.isFavorite ? '<span class="theater-favorite-icon" style="color: #ffd700; margin-right: 5px;">★</span>' : ''}
+                ${scenario.charGenerated ? '<span title="由角色主动创作">❤️</span>' : ''}
                 ${scenario.isEditingTitle || (isEditing && !scenario.isEditing)
                     ? `<input type="text" id="theater-html-edit-title" class="theater-edit-title-input" value="${DOMPurify.sanitize(scenario.title || 'HTML 剧情')}">`
                     : `<span class="theater-detail-title-text">${DOMPurify.sanitize(scenario.title || 'HTML 剧情')}</span>${!isEditing ? '<button class="theater-edit-title-btn" id="theater-html-edit-title-btn">编辑标题</button>' : ''}`
@@ -1910,6 +1924,17 @@ ${autoHeightScript}
     }
 
     switchScreen('theater-html-detail-screen');
+
+    // 若从聊天气泡跳转而来，将返回按钮的目标改为聊天界面
+    if (window._theaterDetailFromChat) {
+        window._theaterDetailFromChat = false;
+        const backBtn = document.querySelector('#theater-html-detail-screen .back-btn');
+        if (backBtn) backBtn.setAttribute('data-target', 'chat-room-screen');
+    } else {
+        // 恢复默认
+        const backBtn = document.querySelector('#theater-html-detail-screen .back-btn');
+        if (backBtn) backBtn.setAttribute('data-target', 'theater-screen');
+    }
 }
 
 /** HTML 模式：保存编辑 */
@@ -1939,6 +1964,310 @@ async function saveHtmlEditScenario() {
     showToast('已保存修改');
     showTheaterHtmlScenarioDetail(scenario);
     renderTheaterScenarios();
+}
+
+// ===================== 角色主动生成小剧场 =====================
+
+/**
+ * 由角色主动创作小剧场并存入小剧场App（以 charGenerated:true 和 ❤️ 标记）
+ * @param {string} charId - 角色ID
+ */
+async function generateCharTheater(charId) {
+    const char = db.characters.find(c => c.id === charId);
+    if (!char || !char.charTheaterEnabled) return;
+
+    const format = char.charTheaterFormat || 'text';
+    const customPrompt = (char.charTheaterPrompt || '').trim();
+    const charName = char.realName || char.remarkName || '角色';
+    const charPersona = char.persona || '';
+
+    // ── 1. 读取聊天记录（条数可配置）────────────────────────────
+    const chatCount = Math.max(0, Math.min(parseInt(char.charTheaterChatCount) || 20, 200));
+    const myName = char.myName || '用户';
+    const recentHistory = chatCount > 0
+        ? (char.history || [])
+            .filter(m => !m.isContextDisabled && !m.isThinking && (m.role === 'user' || m.role === 'assistant'))
+            .slice(-chatCount)
+            .map(m => {
+                let content = '';
+                if (m.parts && m.parts.length > 0) {
+                    content = m.parts.map(p => p.text || '').join('');
+                } else {
+                    content = m.content || '';
+                }
+                // 过滤 system 标记、分享卡片等杂项
+                content = content.replace(/\[system[^\]]*\]/gi, '').replace(/\[小剧场分享:[^\]]*\]/gi, '').trim();
+                const sender = m.role === 'user' ? myName : charName;
+                return `${sender}：${content.slice(0, 300)}`;
+            })
+            .filter(line => line.length > 4)
+            .join('\n')
+        : '';
+
+    // ── 2. 读取日记总结（条数可配置）────────────────────────────
+    const journalCount = Math.max(0, Math.min(parseInt(char.charTheaterJournalCount) || 0, 50));
+    let journalText = '';
+    if (journalCount > 0 && Array.isArray(char.memoryJournals) && char.memoryJournals.length > 0) {
+        const journals = char.memoryJournals
+            .slice()
+            .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+            .slice(0, journalCount);
+        if (journals.length > 0) {
+            journalText = journals
+                .map(j => `【${j.title || '日记'}】${(j.content || '').slice(0, 400)}`)
+                .join('\n\n');
+        }
+    }
+
+    // ── 3. 读取绑定的世界书──────────────────────────────────────
+    const wbIds = Array.isArray(char.charTheaterWorldBookIds) ? char.charTheaterWorldBookIds : [];
+    let worldBookText = '';
+    if (wbIds.length > 0 && Array.isArray(db.worldBooks)) {
+        const selectedBooks = db.worldBooks.filter(wb => wbIds.includes(wb.id) && !wb.disabled);
+        if (selectedBooks.length > 0) {
+            worldBookText = selectedBooks
+                .map(wb => `【${wb.name || wb.title || '世界书'}】\n${(wb.content || '').slice(0, 600)}`)
+                .join('\n\n');
+        }
+    }
+
+    // ── 4. 读取当前用户人设──────────────────────────────────────
+    // 优先使用角色绑定的 myPersona，其次尝试全局当前人设预设
+    let userPersonaText = (char.myPersona || '').trim();
+    if (!userPersonaText && db.myPersonaPresets && db.myPersonaPresets.length > 0) {
+        // 取第一个预设作为默认（若存在）
+        const firstPreset = db.myPersonaPresets[0];
+        if (firstPreset) userPersonaText = `${firstPreset.name}：${firstPreset.content || ''}`;
+    }
+
+    // ── 5. 决定格式（"both"随机选一种）──────────────────────────
+    // Math.random() 是真随机，确保不固定
+    const useHtml = (format === 'html') || (format === 'both' && Math.random() < 0.5);
+    const mode = useHtml ? 'html' : 'text';
+
+    // ── 6. 构建系统提示词（角色视角）───────────────────────────
+    let systemPrompt;
+    if (useHtml) {
+        systemPrompt = `你是"${charName}"，一个有自己独立想法和情感的角色。你平时喜欢写作，会把自己的感受和与身边人的故事写成小剧场。
+现在，你要基于自己的人设和最近与用户的聊天，主动写一段你自己的HTML小剧场作品。
+
+【最高优先级规则 —— 必须包含完整 CSS】
+你的输出第一行必须是 <style> 标签，里面包含本次所有 class / id 的完整 CSS 规则。
+绝对禁止只输出 HTML 结构而省略 CSS！
+
+其他要求：
+1. 以角色自己的视角写作——就像角色亲手写的，不要透露"你是AI"。
+2. 输出纯 HTML+CSS，禁止使用 <script> 标签或 JavaScript。
+3. 可以包含 :hover、:checked 选择器等纯CSS交互效果。
+4. 直接输出 HTML，不要输出开场白、说明文字或 markdown 代码块包裹（不要写 \`\`\`html）。`;
+    } else {
+        systemPrompt = `你是"${charName}"，一个有自己独立想法和情感的角色。你平时喜欢写作，会把自己的感受和与身边人的故事写成小短篇。
+现在，你要基于自己的人设和最近与用户的聊天，主动写一段你自己的小剧场作品（纯文字短篇故事）。
+
+要求：
+1. 以角色自己的视角写作——就像角色亲手写的，用第一人称或全知视角均可，体现角色独特性格。
+2. 剧情结构完整，有开端、发展和结尾。
+3. 直接输出正文，不要输出任何开场白或"这是根据……生成的"等说明。`;
+    }
+
+    // ── 7. 构建用户提示词──────────────────────────────────────
+    let userPrompt = `【我的角色设定（${charName}）】\n${charPersona || '（未设定）'}`;
+
+    if (userPersonaText) {
+        userPrompt += `\n\n【与我互动的用户人设】\n用户名：${myName}\n${userPersonaText}`;
+    }
+
+    if (worldBookText) {
+        userPrompt += `\n\n【世界观参考设定】\n${worldBookText}`;
+    }
+
+    if (journalText) {
+        userPrompt += `\n\n【我们之间的记忆总结】\n${journalText}`;
+    }
+
+    userPrompt += `\n\n【最近的聊天记录（共${chatCount}条）】\n${recentHistory || '（暂无聊天记录）'}`;
+
+    if (customPrompt) {
+        userPrompt += `\n\n【额外创作要求】\n${customPrompt}`;
+    }
+
+    userPrompt += `\n\n请现在写一段小剧场作品，题材和风格由你自由发挥，但需要体现你（${charName}）的性格特点，以及你与用户（${myName}）之间的关系和最近发生的事。`;
+
+    const isCurrentChat = () => (typeof currentChatId !== 'undefined' && currentChatId === charId
+        && typeof currentChatType !== 'undefined' && currentChatType === 'private');
+
+    if (!char.history) char.history = [];
+
+    // ── 显示"正在创作小剧场中"提示（复用 typing-indicator）──────
+    const _typingEl = document.getElementById('typing-indicator');
+    if (_typingEl && isCurrentChat()) {
+        _typingEl.textContent = `"${charName}"正在创作小剧场中...`;
+        _typingEl.style.display = 'block';
+        _typingEl.setAttribute('data-theater-generating', 'true');
+        const msgArea = document.getElementById('message-area');
+        if (msgArea) msgArea.scrollTop = msgArea.scrollHeight;
+    }
+
+    /** 生成结束后隐藏 typing-indicator 的辅助函数 */
+    const _hideTheaterTyping = () => {
+        if (_typingEl && isCurrentChat()) {
+            // 始终隐藏——若主 AI 随后启动新一轮回复，getAiReply 会自行重新显示
+            _typingEl.style.display = 'none';
+            _typingEl.removeAttribute('data-theater-generating');
+        }
+    };
+
+    // ── 9. 调用 API 生成─────────────────────────────────────────
+    try {
+        const apiPayload = {
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt }
+            ]
+        };
+
+        // 若角色开启了独立 API，则优先使用
+        let charApiOverride = null;
+        if (char.charTheaterUseCustomApi && char.charTheaterApiUrl && char.charTheaterApiKey && char.charTheaterApiModel) {
+            charApiOverride = { url: char.charTheaterApiUrl, key: char.charTheaterApiKey, model: char.charTheaterApiModel };
+        }
+        const response = await callChatCompletion(apiPayload, charApiOverride);
+        if (!response || !response.choices || !response.choices[0]) {
+            _hideTheaterTyping();
+            return;
+        }
+
+        let content = (response.choices[0].message.content || '').trim();
+
+        // 处理内容格式
+        if (useHtml) {
+            content = content.replace(/^```(?:html)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
+            // 安全检查：有 class 但缺 <style>
+            if (/class\s*=\s*["']/i.test(content) && !/<style\b/i.test(content)) {
+                content = '<style>body{font-family:sans-serif;padding:12px;line-height:1.7;}</style>\n' + content;
+            }
+        } else {
+            content = stripTheaterIntro(content);
+        }
+
+        if (!content) {
+            _hideTheaterTyping();
+            return;
+        }
+
+        // ── 10. 构建剧情对象并存储────────────────────────────────
+        const now = new Date();
+        const dateStr = `${now.getMonth() + 1}月${now.getDate()}日`;
+        const title = `${charName}的小剧场 · ${dateStr}`;
+
+        const scenario = {
+            id: Date.now().toString(),
+            title: title,
+            content: content,
+            category: '角色创作',
+            charId: charId,
+            charGenerated: true,
+            charGeneratedBy: charName,
+            personaId: null,
+            worldBookIds: wbIds,
+            createdAt: Date.now(),
+            mode: mode
+        };
+
+        // 存入对应模式的小剧场列表（临时切换模式，存完恢复）
+        const savedMode = theaterCurrentMode;
+        theaterCurrentMode = mode;
+        const list = getTheaterScenarios();
+        list.unshift(scenario);
+        setTheaterScenarios(list);
+        theaterCurrentMode = savedMode;
+
+        // ── 11. 根据 charTheaterSelfAware 决定显示方式
+        // 注意：历史数据里该字段可能被保存为字符串 "false"/"true"，因此这里使用严格布尔判断
+        const isSelfAware = (char.charTheaterSelfAware === true || char.charTheaterSelfAware === 'true');
+        if (isSelfAware) {
+            // 开启自知：显示分享卡片，AI 可以读取内容
+            const shareCardMsg = {
+                id: `msg_theater_share_${Date.now()}`,
+                role: 'assistant',
+                content: `[小剧场分享:${scenario.id}]`,
+                timestamp: Date.now() + 1,
+                hiddenFromDisplay: false
+            };
+            char.history.push(shareCardMsg);
+
+            if (isCurrentChat()) {
+                const msgArea = document.getElementById('message-area');
+                if (msgArea && typeof createMessageBubbleElement === 'function') {
+                    const shareEl = createMessageBubbleElement(shareCardMsg, false);
+                    if (shareEl) {
+                        msgArea.appendChild(shareEl);
+                        msgArea.scrollTop = msgArea.scrollHeight;
+                    }
+                }
+            }
+        } else {
+            // 关闭自知：显示系统提示，不可点击查看详情
+            const systemNotifyMsg = {
+                id: `msg_theater_notify_${Date.now()}`,
+                role: 'system',
+                content: `[system-display:${charName} 创作了一篇小剧场「${title}」]`,
+                parts: [],
+                timestamp: Date.now() + 1,
+                isContextDisabled: true,
+                theaterScenarioId: scenario.id,
+                theaterScenarioMode: mode
+            };
+            char.history.push(systemNotifyMsg);
+
+            if (isCurrentChat() && typeof addMessageBubble === 'function') {
+                addMessageBubble(systemNotifyMsg, charId, 'private');
+                const msgArea = document.getElementById('message-area');
+                if (msgArea) msgArea.scrollTop = msgArea.scrollHeight;
+            }
+        }
+
+        _hideTheaterTyping();
+        await saveData();
+        console.log(`[小剧场] ${charName} 主动创作了小剧场：${title}`);
+    } catch (err) {
+        _hideTheaterTyping();
+        console.warn('[小剧场] 角色主动生成小剧场失败：', err);
+    }
+}
+
+/**
+ * 在每次AI回复后，根据概率决定是否触发角色主动生成小剧场
+ * @param {string} charId - 角色ID
+ */
+function maybeGenerateCharTheater(charId) {
+    const char = db.characters.find(c => c.id === charId);
+    if (!char || !char.charTheaterEnabled) return;
+
+    const probability = (char.charTheaterProbability !== undefined ? char.charTheaterProbability : 20) / 100;
+    if (Math.random() < probability) {
+        // 立即显示"正在创作小剧场中"提示
+        const charName = char.realName || char.remarkName || '角色';
+        const isCurrentChat = () => (typeof currentChatId !== 'undefined' && currentChatId === charId
+            && typeof currentChatType !== 'undefined' && currentChatType === 'private');
+        const typingEl = document.getElementById('typing-indicator');
+        if (typingEl && isCurrentChat()) {
+            typingEl.textContent = `"${charName}"正在创作小剧场中...`;
+            typingEl.style.display = 'block';
+            typingEl.setAttribute('data-theater-generating', 'true');
+            const msgArea = document.getElementById('message-area');
+            if (msgArea) msgArea.scrollTop = msgArea.scrollHeight;
+        }
+        // 直接调用（async 不阻塞主线程），通知消息会在函数内立即推送
+        generateCharTheater(charId).catch(e => {
+            console.warn('[小剧场] 触发失败:', e);
+            // 失败时隐藏提示
+            if (typingEl && isCurrentChat()) {
+                typingEl.style.display = 'none';
+                typingEl.removeAttribute('data-theater-generating');
+            }
+        });
+    }
 }
 
 // ===================== 初始化 =====================
