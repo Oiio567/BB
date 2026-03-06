@@ -637,6 +637,11 @@
     width: 100%;
 }
 
+.theater-action-row-third {
+    display: flex;
+    width: 100%;
+}
+
 /* 详情页操作按钮统一样式 - iOS风格，与正文明显区分 */
 .theater-detail-actions .theater-action-btn {
     padding: 10px 0;
@@ -657,6 +662,12 @@
 
 /* 第二行的分享按钮占满整行 */
 .theater-action-row-second .theater-action-btn {
+    width: 100%;
+    flex: none;
+}
+
+/* 第三行的导出按钮占满整行 */
+.theater-action-row-third .theater-action-btn {
     width: 100%;
     flex: none;
 }

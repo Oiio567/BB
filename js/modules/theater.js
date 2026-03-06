@@ -230,7 +230,16 @@ function renderTheaterScenarios() {
             minute: '2-digit'
         });
 
-        const charName = scenario.charId ? (db.characters.find(c => c.id === scenario.charId)?.realName || db.characters.find(c => c.id === scenario.charId)?.remarkName || '未知角色') : '未指定';
+        // 获取角色名（支持向后兼容：字符串或数组）
+        let charName = '未指定';
+        if (scenario.charId) {
+            const charIds = Array.isArray(scenario.charId) ? scenario.charId : [scenario.charId];
+            const chars = charIds.map(id => db.characters.find(c => c.id === id)).filter(Boolean);
+            if (chars.length > 0) {
+                const charNames = chars.map(char => char.realName || char.remarkName || '未知角色');
+                charName = charNames.join('、'); // 多个角色用顿号连接
+            }
+        }
         const category = scenario.category || '未分类';
         const checked = theaterSelectedIds.has(scenario.id);
 
@@ -368,14 +377,17 @@ function showTheaterScenarioDetail(scenario) {
     const detailContent = document.getElementById('theater-detail-content');
     if (!detailContent) return;
 
-    // 获取角色信息
+    // 获取角色信息（支持向后兼容：字符串或数组）
     let charName = '未指定';
     let charPersona = '';
+    let charNames = [];
     if (scenario.charId) {
-        const char = db.characters.find(c => c.id === scenario.charId);
-        if (char) {
-            charName = char.realName || char.remarkName || '未知角色';
-            charPersona = char.persona || '';
+        const charIds = Array.isArray(scenario.charId) ? scenario.charId : [scenario.charId];
+        const chars = charIds.map(id => db.characters.find(c => c.id === id)).filter(Boolean);
+        if (chars.length > 0) {
+            charNames = chars.map(char => char.realName || char.remarkName || '未知角色');
+            charName = charNames.join('、'); // 多个角色用顿号连接
+            charPersona = chars[0].persona || ''; // 使用第一个角色的人设
         }
     }
     
@@ -412,10 +424,12 @@ function showTheaterScenarioDetail(scenario) {
                 // {{user}} / {{User}} / {{USER}} / {{user_name}}
                 .replace(/\{\{\s*(user|User|USER|user_name)\s*\}\}/g, userName);
         }
-        if (charName && charName !== '未指定') {
+        // 如果有多个角色，{{char_name}} 使用第一个角色的名字
+        if (charNames.length > 0) {
+            const firstCharName = charNames[0];
             displayContent = displayContent
                 // {{char}} / {{Char}} / {{CHAR}} / {{char_name}}
-                .replace(/\{\{\s*(char|Char|CHAR|char_name)\s*\}\}/g, charName);
+                .replace(/\{\{\s*(char|Char|CHAR|char_name)\s*\}\}/g, firstCharName);
         }
     }
 
@@ -456,6 +470,7 @@ function showTheaterScenarioDetail(scenario) {
     const shareBtn = document.getElementById('theater-share-btn');
     const editCategoryBtn = document.getElementById('theater-edit-category-btn');
     const deleteBtn = document.getElementById('theater-delete-btn');
+    const exportBtn = document.getElementById('theater-export-btn');
     
     if (favoriteBtn) {
         favoriteBtn.textContent = scenario.isFavorite ? '取消收藏' : '收藏';
@@ -471,6 +486,9 @@ function showTheaterScenarioDetail(scenario) {
     }
     if (deleteBtn) {
         deleteBtn.style.display = isEditing ? 'none' : 'block';
+    }
+    if (exportBtn) {
+        exportBtn.style.display = isEditing ? 'none' : 'block';
     }
     
     // 保存编辑状态到scenario对象
@@ -528,6 +546,31 @@ function showTheaterScenarioDetail(scenario) {
     }
 }
 
+// 更新角色显示
+function updateCharDisplay() {
+    const charDisplay = document.getElementById('theater-char-display');
+    const charOptions = document.getElementById('theater-char-options');
+    if (!charDisplay || !charOptions) return;
+
+    const selectedOptions = charOptions.querySelectorAll('.theater-multiselect-option.selected');
+    const placeholder = charDisplay.querySelector('.theater-multiselect-placeholder');
+    
+    if (selectedOptions.length === 0) {
+        placeholder.textContent = '请选择角色（可选）';
+        charDisplay.classList.remove('has-selection');
+    } else {
+        const names = Array.from(selectedOptions).map(opt => {
+            const label = opt.querySelector('.theater-multiselect-label');
+            return label ? label.textContent : '';
+        }).filter(Boolean);
+        const displayText = names.length > 2 
+            ? `已选 ${selectedOptions.length} 项：${names.slice(0, 2).join('、')}...`
+            : `已选 ${selectedOptions.length} 项：${names.join('、')}`;
+        placeholder.textContent = displayText;
+        charDisplay.classList.add('has-selection');
+    }
+}
+
 // 更新世界书显示
 function updateWorldbookDisplay() {
     const worldbookDisplay = document.getElementById('theater-worldbook-display');
@@ -556,7 +599,6 @@ function updateWorldbookDisplay() {
 // 填充创建表单的选择器
 function populateTheaterForm() {
     const personaSelect = document.getElementById('theater-persona-select');
-    const charSelect = document.getElementById('theater-char-select');
     const promptPresetSelect = document.getElementById('theater-prompt-preset-select');
 
     if (personaSelect) {
@@ -571,16 +613,31 @@ function populateTheaterForm() {
         }
     }
 
-    if (charSelect) {
-        charSelect.innerHTML = '<option value="">请选择角色（可选）</option>';
+    // 填充角色多选下拉
+    const charOptions = document.getElementById('theater-char-options');
+    const charDisplay = document.getElementById('theater-char-display');
+    if (charOptions && charDisplay) {
+        charOptions.innerHTML = '';
         if (db.characters && db.characters.length > 0) {
             db.characters.forEach(char => {
-                const option = document.createElement('option');
-                option.value = char.id;
-                option.textContent = char.remarkName || char.realName || '未命名角色';
-                charSelect.appendChild(option);
+                const option = document.createElement('div');
+                option.className = 'theater-multiselect-option';
+                option.dataset.id = char.id;
+                option.innerHTML = `
+                    <div class="theater-multiselect-checkbox">✓</div>
+                    <div class="theater-multiselect-label">${DOMPurify.sanitize(char.remarkName || char.realName || '未命名角色')}</div>
+                `;
+                option.addEventListener('click', () => {
+                    option.classList.toggle('selected');
+                    updateCharDisplay();
+                });
+                charOptions.appendChild(option);
             });
+        } else {
+            charOptions.innerHTML = '<div style="padding: 12px; font-size: 13px; color: #999;">暂无角色，请先在角色模块中创建。</div>';
         }
+        // 初始化显示
+        updateCharDisplay();
     }
 
     // 填充世界书多选下拉 - 按分类显示
@@ -763,7 +820,7 @@ function populateTheaterForm() {
 
 // 生成剧情
 async function generateTheaterScenario() {
-    const charSelect = document.getElementById('theater-char-select');
+    const charOptions = document.getElementById('theater-char-options');
     const personaSelect = document.getElementById('theater-persona-select');
     const promptInput = document.getElementById('theater-custom-prompt');
     const categoryInput = document.getElementById('theater-category-input');
@@ -773,7 +830,14 @@ async function generateTheaterScenario() {
 
     const customPrompt = promptInput.value.trim();
     const category = (categoryInput && categoryInput.value.trim()) || '未分类';
-    const charId = charSelect ? charSelect.value : '';
+    
+    // 获取选中的多个角色ID
+    let charIds = [];
+    if (charOptions) {
+        const selectedOptions = charOptions.querySelectorAll('.theater-multiselect-option.selected');
+        charIds = Array.from(selectedOptions).map(opt => opt.dataset.id).filter(Boolean);
+    }
+    
     const personaId = personaSelect ? personaSelect.value : '';
 
     if (!customPrompt) {
@@ -818,10 +882,13 @@ async function generateTheaterScenario() {
         let finalPrompt = customPrompt;
 
         // 如果选择了角色，注入角色信息
-        if (charId) {
-            const char = db.characters.find(c => c.id === charId);
-            if (char) {
-                finalPrompt = `【角色信息】\n角色名：${char.realName || char.remarkName || '未命名角色'}\n角色人设：${char.persona || '未设定'}\n\n【用户提示】\n${customPrompt}`;
+        if (charIds.length > 0) {
+            const chars = charIds.map(id => db.characters.find(c => c.id === id)).filter(Boolean);
+            if (chars.length > 0) {
+                const charInfoText = chars.map(char => 
+                    `角色名：${char.realName || char.remarkName || '未命名角色'}\n角色人设：${char.persona || '未设定'}`
+                ).join('\n\n');
+                finalPrompt = `【角色信息】\n${charInfoText}\n\n【用户提示】\n${customPrompt}`;
             }
         }
 
@@ -850,17 +917,35 @@ async function generateTheaterScenario() {
         }
 
         // 如果开启了聊天记录 & 日记总结读取，注入到提示词中
+        // 如果选择了多个角色，读取所有选中角色的聊天记录和日记总结
         const contextToggle = document.getElementById('theater-context-toggle');
         const contextEnabled = contextToggle && contextToggle.getAttribute('aria-checked') === 'true';
-        if (contextEnabled && charId) {
-            const char = db.characters.find(c => c.id === charId);
-            if (char) {
-                const chatHistoryCountInput = document.getElementById('theater-chat-history-count');
-                const journalCountInput = document.getElementById('theater-journal-count');
-                const chatHistoryCount = Math.max(0, Math.min(parseInt(chatHistoryCountInput?.value) || 0, 200));
-                const journalCount = Math.max(0, Math.min(parseInt(journalCountInput?.value) || 0, 50));
+        if (contextEnabled && charIds.length > 0) {
+            const chatHistoryCountInput = document.getElementById('theater-chat-history-count');
+            const journalCountInput = document.getElementById('theater-journal-count');
+            const chatHistoryCount = Math.max(0, Math.min(parseInt(chatHistoryCountInput?.value) || 0, 200));
+            const journalCount = Math.max(0, Math.min(parseInt(journalCountInput?.value) || 0, 50));
 
-                // 读取聊天记录
+            const userName = personaId
+                ? (db.myPersonaPresets.find(p => (p.id || p.name) === personaId)?.name || '用户')
+                : '用户';
+
+            // 收集所有角色的聊天记录
+            const allHistoryTexts = [];
+            let totalHistoryCount = 0;
+
+            // 收集所有角色的日记总结
+            const allJournalTexts = [];
+            let totalJournalCount = 0;
+
+            // 遍历所有选中的角色
+            charIds.forEach(charId => {
+                const char = db.characters.find(c => c.id === charId);
+                if (!char) return;
+
+                const charName = char.realName || char.remarkName || '角色';
+
+                // 读取该角色的聊天记录
                 if (chatHistoryCount > 0 && Array.isArray(char.history) && char.history.length > 0) {
                     let recent = char.history.slice(-chatHistoryCount);
                     // 过滤掉不应进入上下文的消息
@@ -872,10 +957,6 @@ async function generateTheaterScenario() {
                         .filter(m => m.role === 'user' || m.role === 'assistant');
 
                     if (recent.length > 0) {
-                        const charName = char.realName || char.remarkName || '角色';
-                        const userName = personaId
-                            ? (db.myPersonaPresets.find(p => (p.id || p.name) === personaId)?.name || '用户')
-                            : '用户';
                         const historyText = recent.map(m => {
                             let content = '';
                             if (m && Array.isArray(m.parts) && m.parts.length > 0) {
@@ -886,11 +967,12 @@ async function generateTheaterScenario() {
                             const sender = m.role === 'user' ? userName : charName;
                             return `${sender}: ${content}`;
                         }).join('\n');
-                        finalPrompt += `\n\n【用户与角色的最近聊天记录（共${recent.length}条）】\n${historyText}`;
+                        allHistoryTexts.push(`【${charName}的聊天记录（共${recent.length}条）】\n${historyText}`);
+                        totalHistoryCount += recent.length;
                     }
                 }
 
-                // 读取日记总结
+                // 读取该角色的日记总结
                 if (journalCount > 0 && Array.isArray(char.memoryJournals) && char.memoryJournals.length > 0) {
                     let journals = char.memoryJournals
                         .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
@@ -900,9 +982,22 @@ async function generateTheaterScenario() {
                         const journalText = journals
                             .map(j => `标题：${j.title || '无标题'}\n内容：${j.content || ''}`)
                             .join('\n\n---\n\n');
-                        finalPrompt += `\n\n【用户与角色的日记总结（共${journals.length}条）】\n${journalText}`;
+                        allJournalTexts.push(`【${charName}的日记总结（共${journals.length}条）】\n${journalText}`);
+                        totalJournalCount += journals.length;
                     }
                 }
+            });
+
+            // 将所有角色的聊天记录合并到提示词中
+            if (allHistoryTexts.length > 0) {
+                const combinedHistoryText = allHistoryTexts.join('\n\n---\n\n');
+                finalPrompt += `\n\n【用户与所有角色的最近聊天记录（共${totalHistoryCount}条）】\n${combinedHistoryText}`;
+            }
+
+            // 将所有角色的日记总结合并到提示词中
+            if (allJournalTexts.length > 0) {
+                const combinedJournalText = allJournalTexts.join('\n\n---\n\n');
+                finalPrompt += `\n\n【用户与所有角色的日记总结（共${totalJournalCount}条）】\n${combinedJournalText}`;
             }
         }
 
@@ -966,8 +1061,9 @@ async function generateTheaterScenario() {
                 }
             }
 
-            if (charId) {
-                const char = db.characters.find(c => c.id === charId);
+            // 处理角色名占位符替换（如果有多个角色，使用第一个角色的名字）
+            if (charIds.length > 0) {
+                const char = db.characters.find(c => c.id === charIds[0]);
                 const charName = char?.realName || char?.remarkName;
                 if (charName) {
                     processedContent = processedContent.replace(/【角色名】|<角色名>|{{角色名}}|\[角色名\]/g, charName);
@@ -1000,9 +1096,9 @@ async function generateTheaterScenario() {
                 }
             }
             
-            // 替换{{char_name}}为实际的角色名称
-            if (charId) {
-                const char = db.characters.find(c => c.id === charId);
+            // 替换{{char_name}}为实际的角色名称（如果有多个角色，使用第一个角色的名字）
+            if (charIds.length > 0) {
+                const char = db.characters.find(c => c.id === charIds[0]);
                 const charName = char?.realName || char?.remarkName;
                 if (charName) {
                     processedContent = processedContent.replace(/\{\{char_name\}\}/g, charName);
@@ -1010,12 +1106,20 @@ async function generateTheaterScenario() {
             }
 
             // 默认标题为"剧情"，用户可以后续编辑
+            // charId 支持向后兼容：单个角色保存为字符串，多个角色保存为数组
+            let savedCharId = null;
+            if (charIds.length === 1) {
+                savedCharId = charIds[0]; // 单个角色保存为字符串（向后兼容）
+            } else if (charIds.length > 1) {
+                savedCharId = charIds; // 多个角色保存为数组
+            }
+            
             const scenario = {
                 id: Date.now().toString(),
                 title: isHtmlMode ? 'HTML 剧情' : '剧情',
                 content: processedContent,
                 category: category,
-                charId: (charId && charId.trim()) ? charId : null,
+                charId: savedCharId,
                 personaId: (personaId && personaId.trim()) ? personaId : null,
                 worldBookIds: [],
                 customPrompt: customPrompt || null,
@@ -1041,6 +1145,110 @@ async function generateTheaterScenario() {
         generateBtn.disabled = false;
         generateBtn.textContent = '生成剧情';
     }
+}
+
+// 导出小剧场
+function exportTheaterScenario() {
+    if (!currentTheaterScenarioId) return;
+    
+    const scenario = getTheaterScenarios().find(s => s.id === currentTheaterScenarioId);
+    if (!scenario) {
+        showToast('找不到该剧情');
+        return;
+    }
+    
+    // 判断是HTML模式还是纯文字模式
+    const isHtmlMode = scenario.mode === 'html' || /<[^>]+>/.test(scenario.content);
+    
+    let content = scenario.content || '';
+    let filename = (scenario.title || '剧情') + (isHtmlMode ? '.html' : '.txt');
+    let mimeType = isHtmlMode ? 'text/html' : 'text/plain';
+    
+    if (isHtmlMode) {
+        // HTML模式：直接导出原始HTML内容
+        // 如果内容不包含完整的HTML文档结构，则包装成完整HTML文档
+        if (!content.includes('<!DOCTYPE') && !content.includes('<html')) {
+            content = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${scenario.title || 'HTML 剧情'}</title>
+</head>
+<body>
+${content}
+</body>
+</html>`;
+        }
+    } else {
+        // 纯文字模式：保留原始内容（可能包含Markdown格式）
+        // 如果内容中意外包含HTML标签，则移除（正常情况下纯文字模式不应该有HTML）
+        if (/<[^>]+>/.test(content)) {
+            content = content
+                .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '') // 移除style标签
+                .replace(/<[^>]+>/g, ' ') // 移除所有HTML标签
+                .replace(/\s{2,}/g, ' ') // 合并多个空格
+                .replace(/\n\s*\n/g, '\n\n') // 合并多个空行
+                .trim();
+        }
+        
+        // 添加标题和元信息
+        let exportText = `${scenario.title || '剧情'}\n`;
+        exportText += `${'='.repeat(50)}\n\n`;
+        
+        // 添加分类信息
+        if (scenario.category && scenario.category !== '未分类') {
+            exportText += `分类：${scenario.category}\n`;
+        }
+        
+        // 添加角色信息
+        if (scenario.charId) {
+            const charIds = Array.isArray(scenario.charId) ? scenario.charId : [scenario.charId];
+            const chars = charIds.map(id => db.characters.find(c => c.id === id)).filter(Boolean);
+            if (chars.length > 0) {
+                const charNames = chars.map(char => char.realName || char.remarkName || '未知角色');
+                exportText += `角色：${charNames.join('、')}\n`;
+            }
+        }
+        
+        // 添加人设信息
+        if (scenario.personaId) {
+            const persona = db.myPersonaPresets.find(p => (p.id || p.name) === scenario.personaId);
+            if (persona && persona.name) {
+                exportText += `人设：${persona.name}\n`;
+            }
+        }
+        
+        // 添加创建时间
+        const date = new Date(scenario.createdAt || scenario.timestamp || Date.now());
+        const dateStr = date.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        exportText += `创建时间：${dateStr}\n`;
+        exportText += `\n${'='.repeat(50)}\n\n`;
+        
+        // 添加正文内容
+        exportText += content;
+        
+        content = exportText;
+    }
+    
+    // 创建Blob并下载
+    const blob = new Blob([content], { type: mimeType + ';charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    showToast(`已导出为${isHtmlMode ? 'HTML' : 'TXT'}文件`);
 }
 
 // 显示分享选择模态框
@@ -1473,7 +1681,7 @@ async function saveTheaterPromptPreset() {
     );
 
     const personaSelect = document.getElementById('theater-persona-select');
-    const charSelect = document.getElementById('theater-char-select');
+    const charOptions = document.getElementById('theater-char-options');
     const worldbookOptions = document.getElementById('theater-worldbook-options');
 
     const presets = getTheaterPromptPresets();
@@ -1483,7 +1691,15 @@ async function saveTheaterPromptPreset() {
     if (saveFullContext) {
         // 收集当前人设、角色、世界书选择，一并写入预设
         const personaId = personaSelect ? (personaSelect.value || '').trim() || null : null;
-        const charId = charSelect ? (charSelect.value || '').trim() || null : null;
+        
+        // 获取选中的多个角色ID
+        let charIds = [];
+        if (charOptions) {
+            const selectedOptions = charOptions.querySelectorAll('.theater-multiselect-option.selected');
+            charIds = Array.from(selectedOptions).map(opt => opt.dataset.id).filter(Boolean);
+        }
+        // 为了向后兼容，单个角色保存为字符串，多个角色保存为数组
+        const charId = charIds.length === 1 ? charIds[0] : (charIds.length > 1 ? charIds : null);
 
         let worldBookIds = [];
         if (worldbookOptions) {
@@ -1524,7 +1740,7 @@ function applyTheaterPromptPreset() {
     const presetSelect = document.getElementById('theater-prompt-preset-select');
     const promptInput = document.getElementById('theater-custom-prompt');
     const personaSelect = document.getElementById('theater-persona-select');
-    const charSelect = document.getElementById('theater-char-select');
+    const charOptions = document.getElementById('theater-char-options');
     const worldbookOptions = document.getElementById('theater-worldbook-options');
     if (!presetSelect || !promptInput) return;
 
@@ -1542,8 +1758,23 @@ function applyTheaterPromptPreset() {
         personaSelect.value = preset.personaId;
     }
 
-    if (charSelect && preset.charId) {
-        charSelect.value = preset.charId;
+    // 恢复角色选择（支持向后兼容：字符串或数组）
+    if (charOptions && preset.charId) {
+        // 先清空当前选择
+        Array.from(charOptions.querySelectorAll('.theater-multiselect-option.selected'))
+            .forEach(opt => opt.classList.remove('selected'));
+        
+        // 处理 charId：可能是字符串（单个角色）或数组（多个角色）
+        const charIds = Array.isArray(preset.charId) ? preset.charId : [preset.charId];
+        const idSet = new Set(charIds.filter(Boolean));
+        Array.from(charOptions.querySelectorAll('.theater-multiselect-option'))
+            .forEach(opt => {
+                const cid = opt.dataset.id;
+                if (cid && idSet.has(cid)) {
+                    opt.classList.add('selected');
+                }
+            });
+        updateCharDisplay();
     }
 
     if (worldbookOptions) {
@@ -1739,13 +1970,17 @@ function showTheaterHtmlScenarioDetail(scenario) {
     const detailContent = document.getElementById('theater-html-detail-content');
     if (!detailContent) return;
 
+    // 获取角色信息（支持向后兼容：字符串或数组）
     let charName = '未指定';
     let charPersona = '';
+    let charNames = [];
     if (scenario.charId) {
-        const char = db.characters.find(c => c.id === scenario.charId);
-        if (char) {
-            charName = char.realName || char.remarkName || '未知角色';
-            charPersona = char.persona || '';
+        const charIds = Array.isArray(scenario.charId) ? scenario.charId : [scenario.charId];
+        const chars = charIds.map(id => db.characters.find(c => c.id === id)).filter(Boolean);
+        if (chars.length > 0) {
+            charNames = chars.map(char => char.realName || char.remarkName || '未知角色');
+            charName = charNames.join('、'); // 多个角色用顿号连接
+            charPersona = chars[0].persona || ''; // 使用第一个角色的人设
         }
     }
 
@@ -1778,8 +2013,10 @@ function showTheaterHtmlScenarioDetail(scenario) {
         if (userName) {
             displayContent = displayContent.replace(/\{\{\s*(user|User|USER|user_name)\s*\}\}/g, userName);
         }
-        if (charName && charName !== '未指定') {
-            displayContent = displayContent.replace(/\{\{\s*(char|Char|CHAR|char_name)\s*\}\}/g, charName);
+        // 如果有多个角色，{{char_name}} 使用第一个角色的名字
+        if (charNames.length > 0) {
+            const firstCharName = charNames[0];
+            displayContent = displayContent.replace(/\{\{\s*(char|Char|CHAR|char_name)\s*\}\}/g, firstCharName);
         }
     }
 
@@ -1878,12 +2115,14 @@ ${autoHeightScript}
     const shareBtn = document.getElementById('theater-html-share-btn');
     const editCategoryBtn = document.getElementById('theater-html-edit-category-btn');
     const deleteBtn = document.getElementById('theater-html-delete-btn');
+    const exportBtn = document.getElementById('theater-html-export-btn');
 
     if (favoriteBtn) favoriteBtn.textContent = scenario.isFavorite ? '取消收藏' : '收藏';
     if (saveEditBtn) saveEditBtn.style.display = isEditing ? 'block' : 'none';
     if (shareBtn) shareBtn.style.display = isEditing ? 'none' : 'block';
     if (editCategoryBtn) editCategoryBtn.style.display = isEditing ? 'none' : 'block';
     if (deleteBtn) deleteBtn.style.display = isEditing ? 'none' : 'block';
+    if (exportBtn) exportBtn.style.display = isEditing ? 'none' : 'block';
 
     scenario.isEditing = isEditing;
 
@@ -2326,6 +2565,22 @@ function setupTheaterSystem() {
         });
     }
 
+    // 创建页：角色下拉
+    const charDisplay = document.getElementById('theater-char-display');
+    const charDropdown = document.getElementById('theater-char-dropdown');
+    if (charDisplay && charDropdown) {
+        const charWrapper = charDisplay.closest('.theater-multiselect-wrapper');
+        charDisplay.addEventListener('click', () => {
+            charDropdown.classList.toggle('open');
+        });
+
+        document.addEventListener('click', (e) => {
+            if (charWrapper && !charWrapper.contains(e.target)) {
+                charDropdown.classList.remove('open');
+            }
+        });
+    }
+
     // 创建页：世界书下拉
     const worldbookDisplay = document.getElementById('theater-worldbook-display');
     const worldbookDropdown = document.getElementById('theater-worldbook-dropdown');
@@ -2360,6 +2615,7 @@ function setupTheaterSystem() {
     const shareBtn = document.getElementById('theater-share-btn');
     const editCategoryBtn = document.getElementById('theater-edit-category-btn');
     const deleteBtn = document.getElementById('theater-delete-btn');
+    const exportBtn = document.getElementById('theater-export-btn');
 
     if (favoriteBtn) {
         favoriteBtn.addEventListener('click', toggleFavoriteScenario);
@@ -2375,6 +2631,9 @@ function setupTheaterSystem() {
     }
     if (deleteBtn) {
         deleteBtn.addEventListener('click', deleteCurrentScenario);
+    }
+    if (exportBtn) {
+        exportBtn.addEventListener('click', exportTheaterScenario);
     }
 
     // 列表页：多选删除
@@ -2480,6 +2739,10 @@ function setupTheaterSystem() {
     const htmlDeleteBtn = document.getElementById('theater-html-delete-btn');
     if (htmlDeleteBtn) {
         htmlDeleteBtn.addEventListener('click', deleteCurrentScenario);
+    }
+    const htmlExportBtn = document.getElementById('theater-html-export-btn');
+    if (htmlExportBtn) {
+        htmlExportBtn.addEventListener('click', exportTheaterScenario);
     }
 
     // ====== 独立API设置 ======

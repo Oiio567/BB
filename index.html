@@ -4059,10 +4059,16 @@
                         </select>
                     </div>
                     <div class="theater-control-group">
-                        <label>选择角色</label>
-                        <select id="theater-char-select" class="theater-select">
-                            <option value="">请选择角色（可选）</option>
-                        </select>
+                        <label>选择角色（可多选）</label>
+                        <div class="theater-multiselect-wrapper">
+                            <div class="theater-multiselect-display" id="theater-char-display">
+                                <span class="theater-multiselect-placeholder">请选择角色（可选）</span>
+                                <span class="theater-multiselect-arrow">▼</span>
+                            </div>
+                            <div class="theater-multiselect-dropdown" id="theater-char-dropdown">
+                                <div class="theater-multiselect-options" id="theater-char-options"></div>
+                            </div>
+                        </div>
                     </div>
                     <div class="theater-control-group">
                         <label>选择世界书（可多选）</label>
@@ -4188,6 +4194,9 @@
                     <div class="theater-action-row-second">
                         <button id="theater-share-btn" class="theater-action-btn theater-share-btn">分享到聊天框</button>
                     </div>
+                    <div class="theater-action-row-third">
+                        <button id="theater-export-btn" class="theater-action-btn theater-export-btn">导出</button>
+                    </div>
                 </div>
             </main>
         </div>
@@ -4218,6 +4227,9 @@
                     </div>
                     <div class="theater-action-row-second">
                         <button id="theater-html-share-btn" class="theater-action-btn theater-share-btn">分享到聊天框</button>
+                    </div>
+                    <div class="theater-action-row-third">
+                        <button id="theater-html-export-btn" class="theater-action-btn theater-export-btn">导出</button>
                     </div>
                 </div>
             </main>
