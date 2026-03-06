@@ -1,5 +1,24 @@
 // --- 消息渲染模块 ---
 
+// NovelAI 自动生图队列（避免同时发出大量请求）
+const _naiAutoGenQueue = [];
+let _naiAutoGenRunning = false;
+// 标记：仅新消息触发自动生图，历史消息加载时不触发
+let _naiAutoGenNewMsgIds = new Set();
+async function _naiAutoGenProcess() {
+    if (_naiAutoGenRunning) return;
+    _naiAutoGenRunning = true;
+    while (_naiAutoGenQueue.length > 0) {
+        const task = _naiAutoGenQueue.shift();
+        try {
+            await task();
+        } catch (e) {
+            console.error('[NovelAI AutoGen Queue] 任务出错:', e);
+        }
+    }
+    _naiAutoGenRunning = false;
+}
+
 // 根据时间戳格式设置生成时间字符串
 function formatTimestampByFormat(timestamp, chat) {
     const d = new Date(timestamp);
@@ -958,9 +977,78 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
             bubbleElement.className = 'image-bubble';
             bubbleElement.innerHTML = `<img src="${realPhotoUrl}" alt="${pvContent}" onclick="openImageViewer(this.src)" style="cursor: zoom-in;">`;
         } else {
-            bubbleElement = document.createElement('div');
-            bubbleElement.className = 'pv-card';
-            bubbleElement.innerHTML = `<div class="pv-card-content">${pvContent}</div><div class="pv-card-image-overlay" style="background-image: url('${isSent ? 'https://i.postimg.cc/L8NFrBrW/1752307494497.jpg' : 'https://i.postimg.cc/1tH6ds9g/1752301200490.jpg'}');"></div><div class="pv-card-footer"><svg viewBox="0 0 24 24"><path d="M4,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M4,6V18H20V6H4M10,9A1,1 0 0,1 11,10A1,1 0 0,1 10,11A1,1 0 0,1 9,10A1,1 0 0,1 10,9M8,17L11,13L13,15L17,10L20,14V17H8Z"></path></svg><span>照片/视频・点击查看</span></div>`;
+            // === NovelAI 自动生图逻辑 ===
+            const _naiEnabled = db.novelAiSettings && db.novelAiSettings.enabled && db.novelAiSettings.token;
+            
+            if (message.novelAiImageUrl) {
+                // 已有生成好的图片（即使 NovelAI 已关闭也显示已生成的图片）
+                bubbleElement = document.createElement('div');
+                bubbleElement.className = 'image-bubble';
+                bubbleElement.innerHTML = `<img src="${message.novelAiImageUrl}" alt="${pvContent}" onclick="openImageViewer(this.src)" style="cursor: zoom-in; max-width: 280px; border-radius: 12px;">`;
+            } else if (_naiEnabled && !isSent && _naiAutoGenNewMsgIds.has(message.id)) {
+                // NovelAI 已启用，角色发的新照片消息，触发自动生成
+                bubbleElement = document.createElement('div');
+                bubbleElement.className = 'image-bubble nai-generating';
+                bubbleElement.innerHTML = `
+                    <div class="nai-loading-card" style="width: 200px; height: 280px; border-radius: 12px; background: #f0f0f0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; overflow: hidden; position: relative;">
+                        <div class="nai-loading-shimmer" style="position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: nai-shimmer 1.5s infinite;"></div>
+                        <div style="width: 24px; height: 24px; border: 2.5px solid #ccc; border-top-color: #999; border-radius: 50%; animation: nai-spin 0.8s linear infinite;"></div>
+                        <span style="font-size: 12px; color: #999; z-index: 1;">加载中...</span>
+                    </div>`;
+                
+                // 异步触发 NovelAI 生图（使用队列避免并发请求过多）
+                const msgId = message.id;
+                const bubbleRef = bubbleElement;
+                const _pvContent = pvContent;
+                const _isSent = isSent;
+                _naiAutoGenQueue.push(async () => {
+                    try {
+                        // 从内容中提取 {{英文 tag}} 部分作为 prompt
+                        const tagMatch = _pvContent.match(/\{\{([\s\S]+?)\}\}/);
+                        let naiPrompt;
+                        if (tagMatch) {
+                            naiPrompt = tagMatch[1].trim();
+                        } else {
+                            // 没有 {{}} 标记，直接用整段描述
+                            naiPrompt = _pvContent;
+                        }
+                        
+                        console.log('[NovelAI Auto] 为消息生图, prompt:', naiPrompt);
+                        const result = await generateNovelAiImage(naiPrompt);
+                        
+                        if (result && result.imageUrl) {
+                            // 将生成的图片保存到消息对象中
+                            const chat = currentChatType === 'private' 
+                                ? db.characters.find(c => c.id === currentChatId)
+                                : db.groups.find(g => g.id === currentChatId);
+                            if (chat && chat.history) {
+                                const msg = chat.history.find(m => m.id === msgId);
+                                if (msg) {
+                                    msg.novelAiImageUrl = result.imageUrl;
+                                    saveData();
+                                }
+                            }
+                            
+                            // 更新 DOM
+                            bubbleRef.className = 'image-bubble';
+                            bubbleRef.innerHTML = `<img src="${result.imageUrl}" alt="${_pvContent}" onclick="openImageViewer(this.src)" style="cursor: zoom-in; max-width: 280px; border-radius: 12px;">`;
+                        }
+                    } catch (err) {
+                        console.error('[NovelAI Auto] 生图失败:', err);
+                        // 失败时回退为普通 pv-card
+                        bubbleRef.className = 'pv-card';
+                        const displayContent = _pvContent.replace(/\{\{[\s\S]+?\}\}/, '').trim();
+                        bubbleRef.innerHTML = `<div class="pv-card-content">${displayContent}</div><div class="pv-card-image-overlay" style="background-image: url('${_isSent ? 'https://i.postimg.cc/L8NFrBrW/1752307494497.jpg' : 'https://i.postimg.cc/1tH6ds9g/1752301200490.jpg'}');"></div><div class="pv-card-footer"><svg viewBox="0 0 24 24"><path d="M4,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M4,6V18H20V6H4M10,9A1,1 0 0,1 11,10A1,1 0 0,1 10,11A1,1 0 0,1 9,10A1,1 0 0,1 10,9M8,17L11,13L13,15L17,10L20,14V17H8Z"></path></svg><span>生图失败・${err.message || '未知错误'}</span></div>`;
+                    }
+                });
+                _naiAutoGenProcess();
+            } else {
+                // NovelAI 未启用或是用户发的，显示原始 pv-card
+                const displayContent = pvContent.replace(/\{\{[\s\S]+?\}\}/, '').trim() || pvContent;
+                bubbleElement = document.createElement('div');
+                bubbleElement.className = 'pv-card';
+                bubbleElement.innerHTML = `<div class="pv-card-content">${displayContent}</div><div class="pv-card-image-overlay" style="background-image: url('${isSent ? 'https://i.postimg.cc/L8NFrBrW/1752307494497.jpg' : 'https://i.postimg.cc/1tH6ds9g/1752301200490.jpg'}');"></div><div class="pv-card-footer"><svg viewBox="0 0 24 24"><path d="M4,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M4,6V18H20V6H4M10,9A1,1 0 0,1 11,10A1,1 0 0,1 10,11A1,1 0 0,1 9,10A1,1 0 0,1 10,9M8,17L11,13L13,15L17,10L20,14V17H8Z"></path></svg><span>照片/视频・点击查看</span></div>`;
+            }
         }
     } else if (privateSentTransferMatch || privateReceivedTransferMatch || groupTransferMatch) {
         const isSentTransfer = !!privateSentTransferMatch || (groupTransferMatch && isSent);
@@ -1507,6 +1595,8 @@ function addMessageBubble(message, targetChatId, targetChatType) {
                 }
             }
 
+            // 标记新消息，允许 NovelAI 自动生图
+            if (message.id) _naiAutoGenNewMsgIds.add(message.id);
             const bubbleElement = createMessageBubbleElement(message, isContinuous);
             if (bubbleElement) {
                 // Check for timestamp display
@@ -1653,6 +1743,8 @@ function addMessageBubble(message, targetChatId, targetChatType) {
             }
         }
 
+        // 标记新消息，允许 NovelAI 自动生图
+        if (message.id) _naiAutoGenNewMsgIds.add(message.id);
         const bubbleElement = createMessageBubbleElement(message, isContinuous);
         if (bubbleElement) {
             // Check for timestamp display

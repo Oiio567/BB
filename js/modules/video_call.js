@@ -772,6 +772,23 @@ const VideoCallModule = {
 
         document.getElementById('vc-chat-container').innerHTML = '';
 
+        // === 初始化 NovelAI 视频通话生图背景 ===
+        const chat = this.state.currentChat;
+        const _vcNaiOn = chat && chat.vcNovelAiEnabled && db.novelAiSettings && db.novelAiSettings.enabled && db.novelAiSettings.token && this.state.callType === 'video';
+        const bgEl = document.getElementById('vc-nai-bg');
+        const bgImg = document.getElementById('vc-nai-bg-img');
+        const callSceneEl = document.getElementById('vc-scene-call');
+        if (bgEl) {
+            if (_vcNaiOn) {
+                bgEl.style.display = 'block';
+                if (callSceneEl) callSceneEl.classList.add('vc-nai-active');
+                if (bgImg) { bgImg.src = ''; bgImg.style.opacity = '0'; }
+            } else {
+                bgEl.style.display = 'none';
+                if (callSceneEl) callSceneEl.classList.remove('vc-nai-active');
+            }
+        }
+
         if (this.state.isMinimized) {
             // 已处于悬浮窗：不展开全屏，只隐藏 loading、启动计时并更新悬浮窗为「已接通」
             loadingScene.style.opacity = 0;
@@ -826,12 +843,12 @@ const VideoCallModule = {
         }, 1000);
     },
 
-    sendInitialMessage: function() {
+    sendInitialMessage: async function() {
         const chat = this.state.currentChat;
         const name = currentChatType === 'private' ? chat.remarkName : chat.name;
         
         if (this.state.initialAiResponse) {
-            this.parseAndAddAiResponse(this.state.initialAiResponse);
+            await this.parseAndAddAiResponse(this.state.initialAiResponse);
         } else {
             if (this.state.callType === 'video') {
                 setTimeout(() => {
@@ -848,27 +865,102 @@ const VideoCallModule = {
         }
     },
 
-    parseAndAddAiResponse: function(fullText) {
+    parseAndAddAiResponse: async function(fullText) {
+        // === 先提取画面生图指令 ===
+        const naiGenRegex = /\[.*?画面生图[：:]\s*\{\{([\s\S]+?)\}\}\s*\]/g;
+        let naiMatch;
+        const naiTags = [];
+        while ((naiMatch = naiGenRegex.exec(fullText)) !== null) {
+            naiTags.push(naiMatch[1].trim());
+        }
+        // 从 fullText 中移除画面生图指令，避免被当作普通消息渲染
+        const cleanedText = fullText.replace(/\[.*?画面生图[：:]\s*\{\{[\s\S]+?\}\}\s*\]/g, '');
+
+        // 解析所有文字消息（先暂存，不立即显示）
+        const parsedMessages = [];
         const regex = /\[(.*?)[：:]([\s\S]+?)\]/g;
         let match;
-        let delay = 500;
-
-        while ((match = regex.exec(fullText)) !== null) {
+        while ((match = regex.exec(cleanedText)) !== null) {
             const tag = match[1];
-            let content = match[2];
-            content = content.trim();
-            
+            let content = match[2].trim();
             let type = 'voice';
             if (tag.includes('画面') || tag.includes('环境') || tag.includes('动作')) {
                 type = 'visual';
             }
-            
-            setTimeout(() => {
-                this.addMessage('ai', type, content);
-            }, delay);
-            
-            delay += 2000; 
+            parsedMessages.push({ type, content });
         }
+
+        // 判断是否需要等待 NovelAI 生图
+        const chat = this.state.currentChat;
+        const _vcNaiOn = chat && chat.vcNovelAiEnabled && db.novelAiSettings && db.novelAiSettings.enabled && db.novelAiSettings.token;
+        const needGenImage = naiTags.length > 0 && _vcNaiOn;
+
+        if (needGenImage) {
+            // === 同步模式：等图片和文字都准备好再一起展示 ===
+            const loadingEl = document.getElementById('vc-nai-bg-loading');
+            if (loadingEl) loadingEl.style.display = 'flex';
+
+            // 等待图片生成完成
+            const imageUrl = await this.generateVcNovelAiImage(naiTags[0]);
+
+            // 图片就绪（或失败）后，一次性展示所有文字消息
+            let delay = 300;
+            for (const msg of parsedMessages) {
+                setTimeout(() => {
+                    this.addMessage('ai', msg.type, msg.content);
+                }, delay);
+                delay += 1500;
+            }
+        } else {
+            // === 原始模式：无需生图，照旧延时展示 ===
+            let delay = 500;
+            for (const msg of parsedMessages) {
+                setTimeout(() => {
+                    this.addMessage('ai', msg.type, msg.content);
+                }, delay);
+                delay += 2000;
+            }
+        }
+    },
+
+    // === NovelAI 视频通话生图（返回 imageUrl 或 null） ===
+    generateVcNovelAiImage: async function(tags) {
+        const bgEl = document.getElementById('vc-nai-bg');
+        const imgEl = document.getElementById('vc-nai-bg-img');
+        const loadingEl = document.getElementById('vc-nai-bg-loading');
+        if (!bgEl || !imgEl) return null;
+
+        // 显示背景容器和加载指示器
+        bgEl.style.display = 'block';
+        if (loadingEl) loadingEl.style.display = 'flex';
+
+        try {
+            console.log('[VC-NovelAI] 生成视频通话画面, tags:', tags);
+            const result = await generateNovelAiImage(tags);
+            if (result && result.imageUrl) {
+                // 等待图片加载完成后再显示（返回 Promise）
+                await new Promise((resolve) => {
+                    imgEl.style.opacity = '0';
+                    imgEl.src = result.imageUrl;
+                    imgEl.onload = () => {
+                        imgEl.style.opacity = '1';
+                        resolve();
+                    };
+                    imgEl.onerror = () => {
+                        console.error('[VC-NovelAI] 图片加载失败');
+                        resolve(); // 即使失败也继续
+                    };
+                    // 兜底超时
+                    setTimeout(resolve, 5000);
+                });
+                return result.imageUrl;
+            }
+        } catch (err) {
+            console.error('[VC-NovelAI] 生图失败:', err);
+        } finally {
+            if (loadingEl) loadingEl.style.display = 'none';
+        }
+        return null;
     },
 
     addMessage: function(who, type, content) {
@@ -1110,7 +1202,8 @@ const VideoCallModule = {
                 });
                 
                 if (fullText) {
-                    this.parseAndAddAiResponse(fullText);
+                    // await 确保图片生成完成后再解除 processing 状态
+                    await this.parseAndAddAiResponse(fullText);
                 }
             }
         } catch (e) {
@@ -1164,6 +1257,14 @@ const VideoCallModule = {
         this.state.hasEnteredCallScene = false;
 
         this.stopRealCamera();
+
+        // 清理 NovelAI 背景
+        const bgEl = document.getElementById('vc-nai-bg');
+        if (bgEl) bgEl.style.display = 'none';
+        const bgImg = document.getElementById('vc-nai-bg-img');
+        if (bgImg) { bgImg.src = ''; bgImg.style.opacity = '0'; }
+        const callSceneEl = document.getElementById('vc-scene-call');
+        if (callSceneEl) callSceneEl.classList.remove('vc-nai-active');
 
         if (this.state.timerInterval) {
             clearInterval(this.state.timerInterval);

@@ -922,6 +922,17 @@
 .pv-card-footer.hidden { opacity: 0; }
 .pv-card-footer svg { width: 14px; height: 14px; fill: white; flex-shrink: 0; }
 
+/* NovelAI 生图加载动画 */
+@keyframes nai-shimmer {
+    0% { left: -100%; }
+    100% { left: 100%; }
+}
+@keyframes nai-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+.image-bubble.nai-generating img { display: none; }
+
 /* 转账卡片 */
 .transfer-card {
     width: 200px;

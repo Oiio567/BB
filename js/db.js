@@ -168,7 +168,8 @@ const globalSettingKeys = [
     'favorites', 'piggyBank',
     'theaterScenarios', 'theaterPromptPresets',
     'theaterHtmlScenarios', 'theaterHtmlPromptPresets', 'theaterMode',
-    'theaterApiSettings'
+    'theaterApiSettings',
+    'novelAiSettings'
 ];
 if (typeof window !== 'undefined') window.globalSettingKeysForBackup = globalSettingKeys;
 

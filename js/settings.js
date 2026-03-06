@@ -890,6 +890,18 @@ function loadSettingsToSidebar() {
 
         document.getElementById('setting-video-call-enabled').checked = e.videoCallEnabled || false;
         document.getElementById('setting-real-camera-enabled').checked = e.realCameraEnabled || false;
+        document.getElementById('setting-vc-novelai-enabled').checked = e.vcNovelAiEnabled || false;
+
+        // === 加载 NovelAI 生图设置（模型/尺寸/画师串）到拓展 Tab ===
+        if (db.novelAiSettings) {
+            const ns = db.novelAiSettings;
+            const naiModelEl = document.getElementById('novelai-model');
+            const naiResEl = document.getElementById('novelai-resolution');
+            const naiArtistEl = document.getElementById('novelai-artist-tags');
+            if (naiModelEl && ns.model) naiModelEl.value = ns.model;
+            if (naiResEl && ns.resolution) naiResEl.value = ns.resolution;
+            if (naiArtistEl && ns.artistTags !== undefined) naiArtistEl.value = ns.artistTags;
+        }
 
         const ar = e.autoReply || {};
         document.getElementById('setting-auto-reply-enabled').checked = ar.enabled || false;
@@ -1082,6 +1094,18 @@ async function saveSettingsFromSidebar() {
 
         e.videoCallEnabled = document.getElementById('setting-video-call-enabled').checked;
         e.realCameraEnabled = document.getElementById('setting-real-camera-enabled').checked;
+        e.vcNovelAiEnabled = document.getElementById('setting-vc-novelai-enabled').checked;
+
+        // === 保存 NovelAI 生图设置（模型/尺寸/画师串）回 db.novelAiSettings ===
+        {
+            const naiModelEl = document.getElementById('novelai-model');
+            const naiResEl = document.getElementById('novelai-resolution');
+            const naiArtistEl = document.getElementById('novelai-artist-tags');
+            if (!db.novelAiSettings) db.novelAiSettings = {};
+            if (naiModelEl) db.novelAiSettings.model = naiModelEl.value;
+            if (naiResEl) db.novelAiSettings.resolution = naiResEl.value;
+            if (naiArtistEl) db.novelAiSettings.artistTags = naiArtistEl.value.trim();
+        }
 
         if (!e.autoReply) e.autoReply = {};
         e.autoReply.enabled = document.getElementById('setting-auto-reply-enabled').checked;
@@ -1244,6 +1268,9 @@ function setupApiSettingsApp() {
     
     // === 副API设置：补齐人设API ===
     setupSubApiSettings('supplementPersona', 'supplementPersonaApiSettings', 'supplementPersonaApiPresets');
+
+    // === NovelAI 生图 API 设置 ===
+    setupNovelAiSettings();
 }
 
 // --- 预设管理 ---
@@ -1714,6 +1741,127 @@ function setupSubApiPresets(prefix, dbKey, presetsKey) {
         URL.revokeObjectURL(url);
         showToast('预设已导出');
     });
+}
+
+// === NovelAI 生图 API 设置 ===
+function setupNovelAiSettings() {
+    const enabledEl = document.getElementById('novelai-enabled');
+    const tokenEl = document.getElementById('novelai-token');
+    const modelEl = document.getElementById('novelai-model');
+    const resolutionEl = document.getElementById('novelai-resolution');
+    const samplerEl = document.getElementById('novelai-sampler');
+    const stepsSlider = document.getElementById('novelai-steps');
+    const stepsValue = document.getElementById('novelai-steps-value');
+    const scaleSlider = document.getElementById('novelai-scale');
+    const scaleValue = document.getElementById('novelai-scale-value');
+    const systemPromptEl = document.getElementById('novelai-system-prompt');
+    const artistTagsEl = document.getElementById('novelai-artist-tags');
+    const negativePromptEl = document.getElementById('novelai-negative-prompt');
+    const saveBtn = document.getElementById('novelai-save-btn');
+    const testBtn = document.getElementById('novelai-test-btn');
+
+    // 加载已保存的设置
+    if (db.novelAiSettings) {
+        const s = db.novelAiSettings;
+        if (enabledEl) enabledEl.checked = !!s.enabled;
+        if (tokenEl) tokenEl.value = s.token || '';
+        if (modelEl && s.model) modelEl.value = s.model;
+        if (resolutionEl && s.resolution) resolutionEl.value = s.resolution;
+        if (samplerEl && s.sampler) samplerEl.value = s.sampler;
+        if (stepsSlider && s.steps !== undefined) {
+            stepsSlider.value = s.steps;
+            if (stepsValue) stepsValue.textContent = s.steps;
+        }
+        if (scaleSlider && s.scale !== undefined) {
+            scaleSlider.value = s.scale;
+            if (scaleValue) scaleValue.textContent = s.scale;
+        }
+        if (systemPromptEl && s.systemPrompt !== undefined) {
+            systemPromptEl.value = s.systemPrompt;
+        }
+        if (artistTagsEl && s.artistTags !== undefined) {
+            artistTagsEl.value = s.artistTags;
+        }
+        if (negativePromptEl && s.negativePrompt !== undefined) {
+            negativePromptEl.value = s.negativePrompt;
+        }
+    }
+
+    // 滑块实时反馈
+    if (stepsSlider && stepsValue) {
+        stepsSlider.addEventListener('input', (e) => {
+            stepsValue.textContent = e.target.value;
+        });
+    }
+    if (scaleSlider && scaleValue) {
+        scaleSlider.addEventListener('input', (e) => {
+            scaleValue.textContent = e.target.value;
+        });
+    }
+
+    // 保存设置
+    if (saveBtn) {
+        saveBtn.addEventListener('click', async () => {
+            db.novelAiSettings = {
+                enabled: enabledEl ? enabledEl.checked : false,
+                token: tokenEl ? tokenEl.value.trim() : '',
+                model: modelEl ? modelEl.value : 'nai-diffusion-4-curated-preview',
+                resolution: resolutionEl ? resolutionEl.value : '832x1216',
+                sampler: samplerEl ? samplerEl.value : 'k_euler',
+                steps: stepsSlider ? parseInt(stepsSlider.value) : 28,
+                scale: scaleSlider ? parseFloat(scaleSlider.value) : 5,
+                systemPrompt: systemPromptEl ? systemPromptEl.value.trim() : '',
+                artistTags: artistTagsEl ? artistTagsEl.value.trim() : '',
+                negativePrompt: negativePromptEl ? negativePromptEl.value : ''
+            };
+            await saveData();
+            showToast('NovelAI 生图设置已保存！');
+        });
+    }
+
+    // 测试生图
+    if (testBtn) {
+        testBtn.addEventListener('click', async () => {
+            const token = tokenEl ? tokenEl.value.trim() : '';
+            if (!token) {
+                showToast('请先填写 NovelAI API Token');
+                return;
+            }
+
+            testBtn.disabled = true;
+            testBtn.querySelector('.btn-text').textContent = '⏳ 生成中...';
+
+            try {
+                const result = await generateNovelAiImage('1girl, upper body, beautiful', {
+                    token: token,
+                    model: modelEl ? modelEl.value : 'nai-diffusion-4-curated-preview',
+                    resolution: resolutionEl ? resolutionEl.value : '832x1216',
+                    sampler: samplerEl ? samplerEl.value : 'k_euler',
+                    steps: stepsSlider ? parseInt(stepsSlider.value) : 28,
+                    scale: scaleSlider ? parseFloat(scaleSlider.value) : 5,
+                    systemPrompt: systemPromptEl ? systemPromptEl.value.trim() : '',
+                    artistTags: artistTagsEl ? artistTagsEl.value.trim() : '',
+                    negativePrompt: negativePromptEl ? negativePromptEl.value : ''
+                });
+
+                if (result && result.imageUrl) {
+                    const preview = document.getElementById('novelai-test-preview');
+                    const img = document.getElementById('novelai-test-image');
+                    if (preview && img) {
+                        img.src = result.imageUrl;
+                        preview.style.display = 'block';
+                    }
+                    showToast('✅ 测试生图成功！');
+                }
+            } catch (err) {
+                console.error('[NovelAI] 测试生图失败:', err);
+                showToast('❌ 生图失败: ' + (err.message || '未知错误'));
+            } finally {
+                testBtn.disabled = false;
+                testBtn.querySelector('.btn-text').textContent = '🎨 测试生图';
+            }
+        });
+    }
 }
 
 function _getBubblePresets() {
