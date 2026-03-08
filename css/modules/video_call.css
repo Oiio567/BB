@@ -1062,3 +1062,78 @@
 #vc-scene-call.vc-nai-active .vc-text-voice {
     text-shadow: 0 1px 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.4);
 }
+
+/* =========================================
+   保存 NovelAI 图片按钮
+   ========================================= */
+.vc-nai-save-btn {
+    position: absolute;
+    bottom: 130px;
+    right: 16px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 20;
+    transition: background 0.2s, transform 0.2s;
+}
+.vc-nai-save-btn:active {
+    background: rgba(0, 0, 0, 0.7);
+    transform: scale(0.92);
+}
+.vc-nai-save-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+}
+
+/* =========================================
+   收起/展开聊天内容按钮
+   ========================================= */
+.vc-chat-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 6px 0;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.35);
+    cursor: pointer;
+    z-index: 10;
+    position: relative;
+    transition: color 0.2s;
+}
+.vc-chat-toggle-btn:active {
+    color: rgba(255, 255, 255, 0.6);
+}
+.vc-chat-toggle-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+}
+
+/* 聊天区域收起：只隐藏内容，保持布局不变 */
+.vc-chat-area.vc-chat-collapsed .vc-msg-row {
+    opacity: 0 !important;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+/* NovelAI 背景激活时，保存按钮层级提升 */
+#vc-scene-call.vc-nai-active .vc-nai-save-btn {
+    z-index: 20;
+}
+
+/* NovelAI 激活时收起/展开按钮也需要层级 */
+#vc-scene-call.vc-nai-active .vc-chat-toggle-btn {
+    z-index: 10;
+    position: relative;
+}

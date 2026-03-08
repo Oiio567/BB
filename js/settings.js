@@ -2242,16 +2242,16 @@ function populateFontPresetSelect() {
 
 function saveCurrentFontAsPreset() {
     const fontUrlInput = document.getElementById('customize-font-url');
-    if (!fontUrlInput) return showToast('找不到字体 URL 输入框');
-    const url = fontUrlInput.value.trim();
-    if (!url) return showToast('字体 URL 为空，无法保存');
+    const urlVal = fontUrlInput ? fontUrlInput.value.trim() : '';
+    const currentFont = urlVal || db.fontUrl || '';
+    if (!currentFont) return showToast('当前无字体可保存');
     
     let name = prompt('请输入预设名称（将覆盖同名预设）：');
     if (!name) return;
     
     const presets = _getFontPresets();
     const idx = presets.findIndex(p => p.name === name);
-    const preset = { name, url };
+    const preset = { name, url: currentFont, localFontName: db.localFontName || '' };
     
     if (idx >= 0) presets[idx] = preset; 
     else presets.push(preset);
@@ -2267,11 +2267,23 @@ function applyFontPreset(name) {
     if (!p) return showToast('未找到该预设');
     
     const fontUrlInput = document.getElementById('customize-font-url');
-    if (fontUrlInput) fontUrlInput.value = p.url;
+    const isLocal = p.url && p.url.startsWith('data:');
+    if (fontUrlInput) fontUrlInput.value = isLocal ? '' : p.url;
     
     db.fontUrl = p.url;
+    db.localFontName = p.localFontName || '';
     saveData();
     applyGlobalFont(p.url);
+    
+    const nameEl = document.getElementById('local-font-name');
+    if (nameEl) {
+        if (isLocal && p.localFontName) {
+            nameEl.textContent = '已加载本地字体：' + p.localFontName;
+            nameEl.style.display = 'block';
+        } else {
+            nameEl.style.display = 'none';
+        }
+    }
     showToast('已应用字体预设');
 }
 
@@ -3707,16 +3719,22 @@ function setupCustomizeApp() {
         if (target.matches('#apply-font-btn')) {
             const fontUrl = document.getElementById('customize-font-url').value.trim();
             db.fontUrl = fontUrl;
+            db.localFontName = '';
             await saveData();
             applyGlobalFont(fontUrl);
+            const nameEl = document.getElementById('local-font-name');
+            if (nameEl) nameEl.style.display = 'none';
             showToast('新字体已应用！');
         }
         
         if (target.matches('#restore-font-btn')) {
             document.getElementById('customize-font-url').value = '';
             db.fontUrl = '';
+            db.localFontName = '';
             await saveData();
             applyGlobalFont('');
+            const nameEl = document.getElementById('local-font-name');
+            if (nameEl) nameEl.style.display = 'none';
             showToast('已恢复默认字体！');
         }
 
@@ -3875,10 +3893,33 @@ function setupCustomizeApp() {
             const url = document.getElementById('global-incoming-call-sound-url').value;
             if (url) {
                 try {
-                    const audio = new Audio(url);
+                    // 停止之前的测试音频
+                    if (window._testRingAudio) {
+                        window._testRingAudio.pause();
+                        window._testRingAudio.src = '';
+                        window._testRingAudio = null;
+                    }
+                    const audio = new Audio();
+                    audio.preload = 'auto';
                     audio.loop = true;
-                    audio.play().catch(e => showToast('播放失败: ' + e.message));
-                    setTimeout(() => audio.pause(), 3000);
+                    audio.addEventListener('canplaythrough', () => {
+                        audio.play().catch(e => showToast('播放失败: ' + e.message));
+                    }, { once: true });
+                    audio.addEventListener('ended', () => {
+                        if (window._testRingAudio === audio) {
+                            try { audio.currentTime = 0; audio.play().catch(() => {}); } catch(e) {}
+                        }
+                    });
+                    audio.src = url;
+                    audio.load();
+                    window._testRingAudio = audio;
+                    setTimeout(() => {
+                        if (window._testRingAudio === audio) {
+                            audio.pause();
+                            audio.src = '';
+                            window._testRingAudio = null;
+                        }
+                    }, 5000);
                 } catch (e) {
                     showToast('无效的音频地址');
                 }
@@ -4113,6 +4154,42 @@ function setupCustomizeApp() {
                 }
                 await saveData();
                 showToast('提示音已上传');
+            };
+            reader.readAsDataURL(file);
+            e.target.value = null;
+        }
+
+        // 本地字体上传
+        if (e.target.id === 'local-font-upload') {
+            const file = e.target.files[0];
+            if (!file) return;
+            const maxSize = 5 * 1024 * 1024; // 5MB
+            if (file.size > maxSize) {
+                showToast('字体文件过大（超过 5MB），请选择较小的文件或使用 URL 链接');
+                e.target.value = null;
+                return;
+            }
+            if (file.size > 2 * 1024 * 1024) {
+                if (!confirm('该字体文件较大（' + (file.size / 1024 / 1024).toFixed(1) + 'MB），可能导致应用卡顿或闪退。是否继续？')) {
+                    e.target.value = null;
+                    return;
+                }
+            }
+            const reader = new FileReader();
+            reader.onload = async (evt) => {
+                const base64 = evt.target.result;
+                db.fontUrl = base64;
+                db.localFontName = file.name;
+                const fontUrlInput = document.getElementById('customize-font-url');
+                if (fontUrlInput) fontUrlInput.value = '';
+                const nameEl = document.getElementById('local-font-name');
+                if (nameEl) {
+                    nameEl.textContent = '已加载本地字体：' + file.name;
+                    nameEl.style.display = 'block';
+                }
+                await saveData();
+                applyGlobalFont(base64);
+                showToast('本地字体已应用！');
             };
             reader.readAsDataURL(file);
             e.target.value = null;
@@ -4376,8 +4453,14 @@ margin-left: auto !important;
 
                 <div class="form-group">
                     <label for="customize-font-url" style="font-weight: bold; font-size: 14px; color: var(--primary-color);">字体文件 URL</label>
-                    <input type="url" id="customize-font-url" placeholder="例如：https://example.com/font.woff2" value="${db.fontUrl || ''}" style="width:100%; border:1px solid #eee; border-radius:8px; padding:10px;">
-                    <p style="font-size: 12px; color: #999; margin-top: 5px;">支持 woff2, woff, ttf 格式。设置后将应用到全局。</p>
+                    <div style="display: flex; gap: 8px; margin-top: 5px;">
+                        <input type="url" id="customize-font-url" placeholder="例如：https://example.com/font.woff2" value="${db.fontUrl && !db.fontUrl.startsWith('data:') ? db.fontUrl : ''}" style="flex:1; border:1px solid #eee; border-radius:8px; padding:10px;">
+                        <input type="file" id="local-font-upload" accept=".woff2,.woff,.ttf,.otf,.eot,.svg,.ttc" style="display: none;">
+                        <label for="local-font-upload" class="btn btn-secondary btn-small" style="margin: 0; display: flex; align-items: center; cursor: pointer; white-space: nowrap;">📂 本地上传</label>
+                    </div>
+                    <p id="local-font-name" style="font-size: 12px; color: var(--primary-color); margin-top: 5px; display: ${db.fontUrl && db.fontUrl.startsWith('data:') ? 'block' : 'none'};">${db.localFontName ? '已加载本地字体：' + db.localFontName : ''}</p>
+                    <p style="font-size: 12px; color: #999; margin-top: 5px;">支持 woff2, woff, ttf, otf, eot, svg, ttc 格式。设置后将应用到全局。</p>
+                    <p style="font-size: 12px; color: #e67e22; margin-top: 3px;">⚠️ 本地上传限制 5MB，过大的字体文件可能导致应用闪退，建议使用较小的字体文件或使用 URL 链接。</p>
                 </div>
 
                 <!-- 字体预设管理区域 -->

@@ -30,6 +30,8 @@ const VideoCallModule = {
             try {
                 this.state.ringAudio.pause();
                 this.state.ringAudio.currentTime = 0;
+                this.state.ringAudio.src = '';
+                this.state.ringAudio.load();
             } catch (e) {}
             this.state.ringAudio = null;
         }
@@ -278,6 +280,21 @@ const VideoCallModule = {
                     document.getElementById('vc-history-modal').style.display = 'none';
                 }, 300);
             });
+        }
+
+        // 绑定保存NovelAI图片按钮
+        const naiSaveBtn = document.getElementById('vc-nai-save-btn');
+        if (naiSaveBtn) {
+            naiSaveBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.saveNaiImage();
+            });
+        }
+
+        // 绑定聊天区域收起/展开
+        const chatToggleBtn = document.getElementById('vc-chat-toggle-btn');
+        if (chatToggleBtn) {
+            chatToggleBtn.addEventListener('click', () => this.toggleChatArea());
         }
 
         // 绑定头像点击触发回复
@@ -537,10 +554,31 @@ const VideoCallModule = {
         this.stopRingSound();
         if (db.globalIncomingCallSound) {
             try {
-                const ring = new Audio(db.globalIncomingCallSound);
+                const ring = new Audio();
+                ring.preload = 'auto';
                 ring.loop = true;
                 ring.volume = 1;
-                ring.play().catch(() => {});
+                // 等待音频元数据加载完成后再播放，避免播放中断
+                ring.addEventListener('canplaythrough', () => {
+                    if (this.state.ringAudio === ring) {
+                        ring.play().catch(() => {});
+                    }
+                }, { once: true });
+                // 某些浏览器 loop 不可靠，手动监听 ended 事件兜底循环
+                ring.addEventListener('ended', () => {
+                    if (this.state.ringAudio === ring) {
+                        try {
+                            ring.currentTime = 0;
+                            ring.play().catch(() => {});
+                        } catch (e) {}
+                    }
+                });
+                // 处理加载错误
+                ring.addEventListener('error', () => {
+                    console.warn('[VideoCall] 来电铃声加载失败');
+                });
+                ring.src = db.globalIncomingCallSound;
+                ring.load();
                 this.state.ringAudio = ring;
             } catch (e) {}
         }
@@ -944,6 +982,9 @@ const VideoCallModule = {
                     imgEl.src = result.imageUrl;
                     imgEl.onload = () => {
                         imgEl.style.opacity = '1';
+                        // 显示保存按钮
+                        const saveBtn = document.getElementById('vc-nai-save-btn');
+                        if (saveBtn) saveBtn.style.display = 'flex';
                         resolve();
                     };
                     imgEl.onerror = () => {
@@ -1256,6 +1297,7 @@ const VideoCallModule = {
         this.state.isMinimized = false;
         this.state.hasEnteredCallScene = false;
 
+        this.stopRingSound();
         this.stopRealCamera();
 
         // 清理 NovelAI 背景
@@ -1263,8 +1305,21 @@ const VideoCallModule = {
         if (bgEl) bgEl.style.display = 'none';
         const bgImg = document.getElementById('vc-nai-bg-img');
         if (bgImg) { bgImg.src = ''; bgImg.style.opacity = '0'; }
+        const naiSaveBtn = document.getElementById('vc-nai-save-btn');
+        if (naiSaveBtn) naiSaveBtn.style.display = 'none';
         const callSceneEl = document.getElementById('vc-scene-call');
         if (callSceneEl) callSceneEl.classList.remove('vc-nai-active');
+
+        // 恢复聊天区域展开状态
+        const chatArea = document.getElementById('vc-chat-container');
+        if (chatArea) chatArea.classList.remove('vc-chat-collapsed');
+        const chatToggleBtn = document.getElementById('vc-chat-toggle-btn');
+        if (chatToggleBtn) {
+            const iconDown = chatToggleBtn.querySelector('.vc-toggle-icon-down');
+            const iconUp = chatToggleBtn.querySelector('.vc-toggle-icon-up');
+            if (iconDown) iconDown.style.display = 'block';
+            if (iconUp) iconUp.style.display = 'none';
+        }
 
         if (this.state.timerInterval) {
             clearInterval(this.state.timerInterval);
@@ -1687,6 +1742,62 @@ const VideoCallModule = {
         const s = seconds % 60;
         if (m === 0) return `${s}秒`;
         return `${m}分${s}秒`;
+    },
+
+    // === 保存 NovelAI 生成的图片 ===
+    saveNaiImage: function() {
+        const imgEl = document.getElementById('vc-nai-bg-img');
+        if (!imgEl || !imgEl.src || imgEl.src === '' || imgEl.src === window.location.href) {
+            showToast('当前没有可保存的图片');
+            return;
+        }
+
+        try {
+            const link = document.createElement('a');
+            link.href = imgEl.src;
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            link.download = `videocall_${timestamp}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('图片已保存');
+        } catch (err) {
+            console.error('[VideoCall] 保存图片失败:', err);
+            // 如果是 blob/data URL，尝试 open 新窗口
+            try {
+                window.open(imgEl.src, '_blank');
+                showToast('已在新窗口打开图片，请长按保存');
+            } catch (e2) {
+                showToast('保存失败，请截图保存');
+            }
+        }
+    },
+
+    // === 收起/展开聊天文本内容 ===
+    toggleChatArea: function() {
+        const chatArea = document.getElementById('vc-chat-container');
+        const toggleBtn = document.getElementById('vc-chat-toggle-btn');
+        if (!chatArea || !toggleBtn) return;
+
+        const iconDown = toggleBtn.querySelector('.vc-toggle-icon-down');
+        const iconUp = toggleBtn.querySelector('.vc-toggle-icon-up');
+
+        if (chatArea.classList.contains('vc-chat-collapsed')) {
+            // 当前是收起状态 → 展开
+            chatArea.classList.remove('vc-chat-collapsed');
+            iconDown.style.display = 'block';
+            iconUp.style.display = 'none';
+            toggleBtn.title = '收起聊天';
+            setTimeout(() => {
+                chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
+            }, 100);
+        } else {
+            // 当前是展开状态 → 收起
+            chatArea.classList.add('vc-chat-collapsed');
+            iconDown.style.display = 'none';
+            iconUp.style.display = 'block';
+            toggleBtn.title = '展开聊天';
+        }
     },
 
     // === TTS 功能 ===

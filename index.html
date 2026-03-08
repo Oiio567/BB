@@ -450,6 +450,19 @@
                 <div class="status-panel-content" id="char-status-content">
                     <!-- JS 动态注入 -->
                 </div>
+                <!-- 状态栏管理按钮 -->
+                <button class="status-manage-btn" id="status-manage-btn" title="管理">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <!-- 状态栏多选操作栏 -->
+                <div id="status-multi-select-bar" class="status-multi-select-bar">
+                    <span id="status-select-count">已选 0 项</span>
+                    <div class="status-multi-select-actions">
+                        <button class="btn btn-small" id="status-select-all-btn">全选</button>
+                        <button class="btn btn-danger btn-small" id="status-delete-selected-btn" disabled>删除选中</button>
+                        <button class="btn btn-small" id="status-cancel-multi-btn">取消</button>
+                    </div>
+                </div>
                 <button class="close-status-panel" id="close-status-panel-btn">×</button>
             </div>
 
@@ -1047,8 +1060,14 @@
             </main>
             <div id="world-book-multi-select-bar" style="display: none;">
                 <span id="world-book-select-count">已选择 0 项</span>
-                <button class="btn btn-danger" id="delete-selected-world-books-btn"
-                    style="width: auto; padding: 8px 16px;">删除已选</button>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-primary" id="move-selected-world-books-btn"
+                        style="width: auto; padding: 8px 16px;">移动到分类</button>
+                    <button class="btn btn-secondary" id="toggle-selected-world-books-btn"
+                        style="width: auto; padding: 8px 16px;">停用已选</button>
+                    <button class="btn btn-danger" id="delete-selected-world-books-btn"
+                        style="width: auto; padding: 8px 16px;">删除已选</button>
+                </div>
             </div>
             <!-- 删除分类时的选择弹窗 -->
             <div id="world-book-delete-category-modal" class="modal-overlay">
@@ -1059,6 +1078,20 @@
                         <button type="button" id="wb-delete-category-and-entries-btn" class="btn btn-danger" style="width: 100%;">同时删除该分类下所有条目</button>
                         <button type="button" id="wb-delete-category-move-entries-btn" class="btn btn-primary" style="width: 100%;">仅删除分类，条目移至未分类</button>
                         <button type="button" id="wb-delete-category-cancel-btn" class="btn btn-neutral" style="width: 100%;">取消</button>
+                    </div>
+                </div>
+            </div>
+            <!-- 移动到分类的选择弹窗 -->
+            <div id="world-book-move-category-modal" class="modal-overlay">
+                <div class="modal-window" style="max-width: 320px;">
+                    <h3>移动到分类</h3>
+                    <p id="wb-move-category-modal-desc" style="color: #666; font-size: 14px; margin: 10px 0 16px;">选择目标分类：</p>
+                    <div id="wb-move-category-list" style="max-height: 300px; overflow-y: auto; margin-bottom: 16px;">
+                        <!-- 分类列表将在这里动态生成 -->
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <button type="button" id="wb-move-category-confirm-btn" class="btn btn-primary" style="width: 100%;">确认移动</button>
+                        <button type="button" id="wb-move-category-cancel-btn" class="btn btn-neutral" style="width: 100%;">取消</button>
                     </div>
                 </div>
             </div>
@@ -2532,11 +2565,13 @@
         <div id="token-distribution-modal" class="modal-overlay">
             <div class="modal-window token-distribution-window">
                 <h3 class="token-distribution-title">Token 分布</h3>
-                <div id="token-chart-container"></div>
-                <div class="token-total-row">
-                    <span class="token-total-label">合计</span>
-                    <strong id="token-distribution-total" class="token-total-value">0</strong>
-                    <span class="token-total-unit">Token</span>
+                <div class="token-chart-summary">
+                    <div id="token-chart-container"></div>
+                    <div class="token-total-row">
+                        <span class="token-total-label">合计</span>
+                        <strong id="token-distribution-total" class="token-total-value">0</strong>
+                        <span class="token-total-unit">Token</span>
+                    </div>
                 </div>
                 <div class="token-details-list" id="token-details-list"></div>
                 <div class="token-detail-desc" id="token-detail-desc"></div>
@@ -4966,6 +5001,59 @@
             </main>
         </div>
 
+        <!-- 小号管理页面 -->
+        <div id="forum-alt-accounts-screen" class="screen">
+            <header class="app-header">
+                <button class="back-btn" data-target="forum-settings-screen">&#8249;</button>
+                <div class="title-container">
+                    <h1 class="title">小号管理</h1>
+                </div>
+                <div class="action-btn-group">
+                    <button type="button" class="btn btn-primary btn-small" id="forum-create-alt-btn">新建小号</button>
+                </div>
+            </header>
+            <main class="content">
+                <div class="kkt-settings-container">
+                    <div class="kkt-group">
+                        <div class="kkt-group-title">当前身份</div>
+                        <div id="forum-active-identity-display" class="forum-alt-identity-card forum-alt-identity-active">
+                            <span class="forum-alt-identity-name">大号</span>
+                            <span class="forum-alt-identity-badge">使用中</span>
+                        </div>
+                    </div>
+                    <div class="kkt-group">
+                        <div class="kkt-group-title">我的小号</div>
+                        <p style="font-size:12px;color:#888;margin:0 0 8px 0;">小号的身份信息不会被角色知道。但如果小号资料与大号太相似，聪明的角色可能会猜出来哦~</p>
+                        <div id="forum-alt-accounts-list"></div>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- 小号编辑模态框 -->
+        <div id="forum-alt-edit-modal" class="modal-overlay">
+            <div class="modal-content" style="max-width:400px;">
+                <h3 id="forum-alt-edit-modal-title">新建小号</h3>
+                <div style="text-align:center;margin-bottom:12px;">
+                    <img id="forum-alt-edit-avatar" src="https://i.postimg.cc/GtbTnxhP/o-o-1.jpg" style="width:64px;height:64px;border-radius:50%;object-fit:cover;cursor:pointer;border:2px solid #e0e0e0;">
+                    <input type="file" id="forum-alt-avatar-upload" accept="image/*" style="display:none;">
+                    <p style="font-size:12px;color:#999;margin:4px 0 0;">点击头像更换</p>
+                </div>
+                <div style="margin-bottom:12px;">
+                    <label style="font-size:13px;color:#666;display:block;margin-bottom:4px;">昵称</label>
+                    <input type="text" id="forum-alt-edit-username" placeholder="给小号起个名字" autocomplete="off" style="width:100%;padding:8px;border:1px solid #e0e0e0;border-radius:8px;box-sizing:border-box;">
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label style="font-size:13px;color:#666;display:block;margin-bottom:4px;">简介</label>
+                    <textarea id="forum-alt-edit-bio" placeholder="小号的个人简介..." rows="3" style="width:100%;padding:8px;border:1px solid #e0e0e0;border-radius:8px;box-sizing:border-box;"></textarea>
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button type="button" class="btn btn-neutral" id="forum-alt-edit-cancel-btn">取消</button>
+                    <button type="button" class="btn btn-primary" id="forum-alt-edit-save-btn">保存</button>
+                </div>
+            </div>
+        </div>
+
         <div id="forum-settings-screen" class="screen">
             <header class="app-header">
                 <button class="back-btn" data-target="forum-screen">&#8249;</button>
@@ -5034,6 +5122,12 @@
                             <div class="kkt-item-label">个人资料</div>
                             <div class="kkt-item-control">
                                 <button type="button" class="btn btn-primary" id="forum-goto-profile-btn" style="padding:6px 12px;">编辑</button>
+                            </div>
+                        </div>
+                        <div class="kkt-item">
+                            <div class="kkt-item-label">小号管理</div>
+                            <div class="kkt-item-control">
+                                <button type="button" class="btn btn-primary" id="forum-goto-alt-accounts-btn" style="padding:6px 12px;">管理</button>
                             </div>
                         </div>
                         <div class="kkt-item">
@@ -5457,6 +5551,13 @@
                     <div class="vc-nai-spinner"></div>
                 </div>
             </div>
+            <!-- 保存图片按钮（独立于背景层，确保可点击） -->
+            <button id="vc-nai-save-btn" class="vc-nai-save-btn" style="display:none;" title="保存图片">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                    <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+                </svg>
+            </button>
             <!-- 用户真实摄像头画中画 -->
             <div id="vc-user-camera-pip" class="vc-user-camera-pip" style="display:none;">
                 <video id="vc-user-camera-video" autoplay playsinline muted></video>
@@ -5476,6 +5577,16 @@
             <div class="vc-chat-area" id="vc-chat-container">
                 <!-- 自动插入的第一条消息 -->
             </div>
+
+            <!-- 收起/展开聊天内容按钮 -->
+            <button id="vc-chat-toggle-btn" class="vc-chat-toggle-btn" title="收起聊天">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" class="vc-toggle-icon-down">
+                    <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
+                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" class="vc-toggle-icon-up" style="display:none;">
+                    <path fill-rule="evenodd" d="M7.646 4.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1-.708.708L8 5.707l-5.646 5.647a.5.5 0 0 1-.708-.708l6-6z"/>
+                </svg>
+            </button>
 
             <div class="vc-controls-wrapper">
                 <div class="vc-controls">
